@@ -1,0 +1,50 @@
+# ============================================================
+#  НАСТРОЙКИ РАДАРА — меняйте здесь, код трогать не нужно
+# ============================================================
+
+settings:
+  min_views: 1000000        # порог просмотров
+  months_back: 6            # искать ролики не старше N месяцев
+  max_duration_sec: 180     # Shorts/рилсы до 3 минут
+  langs: ["en"]             # нужные языки (en, es, ...)
+  yt_region: "US"
+  max_analyze_per_run: 30   # максимум роликов на полный ИИ-разбор за один запуск (контроль расходов)
+  tt_results_per_keyword: 30
+  tt_region: "US"
+  digest_top: 10            # сколько роликов показывать в Telegram-дайджесте
+
+verticals:
+  joints:
+    name: "Суставы"
+    keywords:
+      - knee pain
+      - knee pain relief
+      - knee pain exercises
+      - knee pain at night
+      - cracking knees
+      - stiff knees morning
+      - joint pain relief
+      - joint pain remedies
+      - arthritis pain
+      - arthritis exercises
+      - osteoarthritis knee
+      - bone on bone knee
+      - cartilage repair
+      - hip pain relief
+      - collagen for joints
+      - turmeric for joint pain
+      - foods that cause joint pain
+      - exercises for seniors knees
+    nutra_scale: |
+      5 = тема суставов/боли, ЦА 45+, механика естественно подводит к «средству»/добавке, можно повторить без шока и запрещённых заявлений;
+      4 = тема суставов/боли, механика переносима, но нужна заметная адаптация;
+      3 = смежная тема (спина, шея, осанка, общее здоровье 50+) или ЦА моложе 40 — ролики про шею/спину/осанку БЕЗ колен и суставов получают максимум 3;
+      2 = здоровье в целом, к суставам притянуто;
+      1 = не подходит (юмор, травмы спортсменов, другая тема).
+
+# Новую вертикаль добавляйте по образцу:
+#  weight_loss:
+#    name: "Похудение"
+#    keywords: [belly fat, lose weight after 40]
+#    nutra_scale: |
+#      5 = ...
