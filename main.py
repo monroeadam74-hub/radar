@@ -45,6 +45,7 @@ class DB:
             try:
                 r = requests.post(self.url, headers=self.h, json={"sql": sql, "params": params}, timeout=60).json()
                 if r.get("success"):
+                    self.meta = r["result"][0].get("meta") or {}
                     return r["result"][0].get("results", [])
                 err = r.get("errors")
             except Exception as e:
@@ -500,6 +501,16 @@ def tt_cover_url(page, ua):
     return None
 
 
+def db_size(db):
+    try:
+        db.q("SELECT 1")
+        b = (getattr(db, "meta", {}) or {}).get("size_after")
+        if b:
+            log(f"Размер базы: {b/1e6:.1f} МБ из 5000 МБ бесплатных")
+    except Exception:
+        pass
+
+
 def tiktok_thumbs(db, limit=400):
     """Обложки TikTok: oEmbed с сервера GitHub (Cloudflare TikTok не пускает) → уменьшенная JPEG в таблицу thumbs."""
     import base64, io
@@ -551,6 +562,7 @@ def main():
     load_settings(db)
     if ENV("RADAR_MODE") == "thumbs":
         tiktok_thumbs(db)
+        db_size(db)
         return
     # разобранные ролики не на нужном языке (определено при разборе) — в отсев
     langs = ",".join("'%s'" % l.replace("'", "") for l in S["langs"])
@@ -635,6 +647,7 @@ def main():
     stats = dict(found=found, new=len(new_ids), analyzed=analyzed, cost=cost)
     db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), found, len(new_ids), analyzed, cost, "\n".join(LOG)[-20000:]])
     report(db, new_ids, stats)
+    db_size(db)
     log("Готово:", stats)
 
 

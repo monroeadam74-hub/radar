@@ -95,6 +95,12 @@ async function api(req, env, url) {
     return res;
   }
 
+  if (p === "/api/stats") {
+    const r = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM videos) AS videos, (SELECT COUNT(*) FROM thumbs) AS thumbs").first().catch(() => ({}));
+    const m = await env.DB.prepare("SELECT 1").run();
+    return json({ size: m.meta && m.meta.size_after, ...r });
+  }
+
   if (p === "/api/authors") {
     try {
       const r = await env.DB.prepare("SELECT * FROM authors ORDER BY relevant_shots DESC, max_views DESC LIMIT 1000").all();
