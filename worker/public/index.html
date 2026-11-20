@@ -198,8 +198,8 @@ function card(c){
 }
 function thumb(c){
   const id = rawId(c.id);
-  const src = c.platform === "YouTube" ? `https://i.ytimg.com/vi/${id}/oardefault.jpg` : `/api/thumb?id=${encodeURIComponent(c.id)}`;
-  const fb = c.platform === "YouTube" ? `this.onerror=null;this.src='https://i.ytimg.com/vi/${id}/hqdefault.jpg'` : `this.remove()`;
+  const src = c.platform === "YouTube" ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : `/api/thumb?id=${encodeURIComponent(c.id)}`;
+  const fb = c.platform === "YouTube" ? `this.remove()` : `this.remove()`;
   return `<img class="th" loading="lazy" alt="" src="${src}" onerror="${fb}">`;
 }
 function authorUrl(c){ return c.platform==="TikTok" ? `https://www.tiktok.com/@${c.author}` : `https://www.youtube.com/channel/${String(c.author_id||"").slice(3)}`; }
