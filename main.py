@@ -68,6 +68,7 @@ SCHEMA = [
     "CREATE TABLE IF NOT EXISTS runs (ts TEXT, found INTEGER, new INTEGER, analyzed INTEGER, cost_usd REAL, log TEXT)",
     "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS labels (id TEXT PRIMARY KEY, v TEXT, note TEXT, hidden INTEGER DEFAULT 0, ts TEXT)",
+    "CREATE TABLE IF NOT EXISTS thumbs (id TEXT PRIMARY KEY, mime TEXT, data TEXT, ts TEXT)",
     "CREATE INDEX IF NOT EXISTS i_snap ON snapshots(video_id)",
     "CREATE INDEX IF NOT EXISTS i_vid_author ON videos(author_id)",
 ]
@@ -479,11 +480,56 @@ def load_settings(db):
         log("Лимит разборов на этот запуск:", S["max_analyze_per_run"])
 
 
+def tiktok_thumbs(db, limit=400):
+    """Обложки TikTok: oEmbed с сервера GitHub (Cloudflare TikTok не пускает) → уменьшенная JPEG в таблицу thumbs."""
+    import base64, io
+    rows = db.q("SELECT id, url, author FROM videos WHERE platform='TikTok' AND id NOT IN (SELECT id FROM thumbs) LIMIT ?", [limit])
+    if not rows:
+        return
+    ua = {"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"}
+    ok = 0
+    for r in rows:
+        vid = r["id"][3:]
+        page = (r.get("url") or "").split("?")[0]
+        if "/video/" not in page:
+            page = f"https://www.tiktok.com/@{r.get('author') or 'x'}/video/{vid}"
+        try:
+            j = requests.get("https://www.tiktok.com/oembed", params={"url": page}, headers=ua, timeout=20).json()
+            src = j.get("thumbnail_url")
+            if not src:
+                continue
+            img = requests.get(src, headers=ua, timeout=30)
+            img.raise_for_status()
+            data, mime = img.content, img.headers.get("content-type", "image/jpeg")
+            try:
+                from PIL import Image
+                im = Image.open(io.BytesIO(data)).convert("RGB")
+                im.thumbnail((360, 640))
+                buf = io.BytesIO(); im.save(buf, "JPEG", quality=72); data, mime = buf.getvalue(), "image/jpeg"
+            except Exception:
+                pass
+            if len(data) > 70000:
+                continue
+            db.q("INSERT OR REPLACE INTO thumbs VALUES (?,?,?,?)", [r["id"], mime, base64.b64encode(data).decode(), NOW.isoformat(timespec="seconds")])
+            ok += 1
+        except Exception as e:
+            log(f"  обложка {r['id']}: {str(e)[:120]}")
+        time.sleep(0.5)
+    log(f"Обложки TikTok: сохранено {ok} из {len(rows)}")
+
+
 def main():
     db = DB()
     for s in SCHEMA:
         db.q(s)
+    try:
+        db.q("ALTER TABLE labels ADD COLUMN reason TEXT")
+    except Exception:
+        pass
     load_settings(db)
+    if ENV("RADAR_MODE") == "thumbs":
+        tiktok_thumbs(db)
+        return
     # разобранные ролики не на нужном языке (определено при разборе) — в отсев
     langs = ",".join("'%s'" % l.replace("'", "") for l in S["langs"])
     db.q(f"UPDATE videos SET status='skip_lang' WHERE status='analyzed' AND lang<>'' AND substr(lang,1,2) NOT IN ({langs})")
@@ -559,6 +605,10 @@ def main():
             time.sleep(2)
         refresh_authors(db, cands)
 
+    try:
+        tiktok_thumbs(db)
+    except Exception as e:
+        log("Обложки TikTok: ошибка", str(e)[:200])
     cost = GEM["tin"] / 1e6 * 0.25 + GEM["tout"] / 1e6 * 1.5
     stats = dict(found=found, new=len(new_ids), analyzed=analyzed, cost=cost)
     db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), found, len(new_ids), analyzed, cost, "\n".join(LOG)[-20000:]])

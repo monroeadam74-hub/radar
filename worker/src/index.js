@@ -3,6 +3,7 @@
 const SCHEMA = [
   "CREATE TABLE IF NOT EXISTS labels (id TEXT PRIMARY KEY, v TEXT, note TEXT, hidden INTEGER DEFAULT 0, ts TEXT)",
   "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)",
+  "CREATE TABLE IF NOT EXISTS thumbs (id TEXT PRIMARY KEY, mime TEXT, data TEXT, ts TEXT)",
 ];
 
 const json = (data, status = 200, headers = {}) =>
@@ -20,8 +21,12 @@ async function authed(req, env) {
   return !!m && m[1] === (await sha(env.APP_PASSWORD + "|radar"));
 }
 
+let ensured = false;
 async function ensure(env) {
+  if (ensured) return;
   for (const s of SCHEMA) await env.DB.prepare(s).run();
+  try { await env.DB.prepare("ALTER TABLE labels ADD COLUMN reason TEXT").run(); } catch {}
+  ensured = true;
 }
 
 const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
@@ -48,7 +53,7 @@ async function api(req, env, url) {
       const r = await env.DB.prepare(
         `SELECT v.id, v.platform, v.vertical, v.url, v.author, v.author_id, v.title, v.published, v.duration, v.lang, v.keyword,
                 v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score,
-                v.content_type, v.analysis, v.subtitles, v.first_seen, l.v AS label, l.note AS note, COALESCE(l.hidden, 0) AS hidden
+                v.content_type, v.analysis, v.subtitles, v.first_seen, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
          FROM videos v LEFT JOIN labels l ON l.id = v.id ORDER BY v.views DESC LIMIT 3000`).all();
       rows = r.results || [];
     } catch (e) { return json({ videos: [], note: "Таблица videos ещё не создана — запустите сбор" }); }
@@ -64,6 +69,15 @@ async function api(req, env, url) {
     const cache = caches.default, key = new Request(`https://thumb.cache/tt2/${id}`);
     const hit = await cache.match(key);
     if (hit) return hit;
+    try {
+      const t = await env.DB.prepare("SELECT mime, data FROM thumbs WHERE id=?").bind(vid).first();
+      if (t && t.data) {
+        const bin = Uint8Array.from(atob(t.data), (ch) => ch.charCodeAt(0));
+        const res = new Response(bin, { headers: { "content-type": t.mime || "image/jpeg", "cache-control": "public, max-age=604800" } });
+        await cache.put(key, res.clone());
+        return res;
+      }
+    } catch {}
     let pageUrl = `https://www.tiktok.com/video/${id}`;
     try {
       const row = await env.DB.prepare("SELECT url, author FROM videos WHERE id=?").bind(vid).first();
@@ -96,12 +110,12 @@ async function api(req, env, url) {
   }
 
   if (p === "/api/label" && req.method === "POST") {
-    const { id, v, note } = await req.json();
+    const { id, v, note, reason } = await req.json();
     if (!id) return json({ error: "id" }, 400);
     await env.DB.prepare(
-      `INSERT INTO labels (id, v, note, ts) VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(id) DO UPDATE SET v = COALESCE(?2, labels.v), note = COALESCE(?3, labels.note), ts = ?4`)
-      .bind(id, v ?? null, note ?? null, new Date().toISOString()).run();
+      `INSERT INTO labels (id, v, note, reason, ts) VALUES (?1, ?2, ?3, ?5, ?4)
+       ON CONFLICT(id) DO UPDATE SET v = COALESCE(?2, labels.v), note = COALESCE(?3, labels.note), reason = COALESCE(?5, labels.reason), ts = ?4`)
+      .bind(id, v ?? null, note ?? null, new Date().toISOString(), reason ?? null).run();
     return json({ ok: true });
   }
 

@@ -73,6 +73,10 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .acts .b{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent;color:var(--bad);font-weight:600}
 .acts .b.on{background:var(--badbg);border-color:var(--bad)}
 .acts .h{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent}
+.why{border:1px solid #5A2A22;background:#1A1210;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.why .chips button{height:28px;font-size:12px}
+.why input{width:100%}
+.whyt{font-size:12px;color:#FFD3C9;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tabs{display:flex;gap:16px;border-bottom:1px solid var(--line)}
 .tabs button{border:none;background:none;color:var(--m);padding:8px 0;border-bottom:2px solid transparent}
 .tabs button.on{color:#fff;border-bottom-color:var(--acc);font-weight:600}
@@ -224,7 +228,7 @@ function filtered(){
     if(F.score&&(c.nutra_score||0)<F.score)return false;
     if(F.cta.size&&!F.cta.has(A_(c).cta_mechanic))return false;
     if(F.types.size&&!F.types.has(c.content_type))return false;
-    if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note].join(" ").toLowerCase().includes(q))return false;
+    if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note,c.reason].join(" ").toLowerCase().includes(q))return false;
     return true;});
   const key={views:c=>c.views||0,score:c=>(c.nutra_score||0)*1e12+(c.views||0),outlier:c=>c.outlier||0,new:c=>Date.parse(c.first_seen||0)||0}[so];
   return r.sort((a,b)=>key(b)-key(a));
@@ -243,7 +247,7 @@ function row(c){
   const lb=c.label==="good"?`<span class="lbl good">нужно</span>`:c.label==="bad"?`<span class="lbl bad">мусор</span>`:"";
   return `<div class="row ${c.id===selId?"sel":""} ${c.label==="bad"?"bad":""} ${c.hidden?"hid":""}" id="r_${c.id}" onclick="select('${c.id}')">
     <img class="th" loading="lazy" referrerpolicy="no-referrer" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
-    <div class="au"><b>@${e(c.author)}${lb}</b><span>${c.platform==="YouTube"?"YouTube":"TikTok"} · ${c.duration||"?"} с</span></div>
+    <div class="au"><b>@${e(c.author)}${lb}</b><span>${c.platform==="YouTube"?"YouTube":"TikTok"} · ${c.duration||"?"} с</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
     <div>${short(c.views)}</div><div class="c4">${c.outlier?"×"+Math.round(c.outlier):"—"}</div>
     <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
     <div class="hook">${e(a.hook_0_3s||c.title||"")}</div></div>`;
@@ -276,11 +280,12 @@ function renderDet(autoplay){
        <button class="h" onclick="hide()" aria-label="${c.hidden?"Вернуть":"Скрыть"}" title="${c.hidden?"Вернуть":"Скрыть"} · H">
          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9CED6" stroke-width="2" aria-hidden="true">${c.hidden?'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>':'<path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A10 10 0 0122 12a17 17 0 01-3.2 4.2M6.6 6.6A17 17 0 002 12a10 10 0 0014 6.4"/>'}</svg></button>
      </div>
+     <div id="whyBox"></div>
      <div class="tabs">${[["an","Разбор"],["sub","Субтитры"],["ost","Надписи"],["note","Заметка"]].map(([k,t])=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';renderTab()">${t}</button>`).join("")}</div>
      <div id="tabBody"></div>
      <div style="font-size:13px"><a href="${e(c.url)}" target="_blank" rel="noopener">Открыть оригинал ↗</a> · <a href="#" onclick="showAuthor(cur().author);return false">все ролики автора</a></div>
    </div>`;
-  renderTab(); if(autoplay)play(true);
+  renderTab(); renderWhy(); if(autoplay)play(true);
 }
 const STATUS={queued:"ждёт разбора",prefilter:"ждёт фильтра",skip_topic:"отсеян: не по теме",skip_lang:"отсеян: другой язык"};
 function renderTab(){
@@ -324,7 +329,27 @@ async function play(muted){
 }
 function setRate(){rate=rate===1?.5:rate===.5?.25:1;if(player&&player.setPlaybackRate)player.setPlaybackRate(rate);const b=$("rateB");if(b)b.textContent=rate+"×";}
 function seek(t){if(player&&player.seekTo){player.seekTo(t,true);player.unMute&&player.unMute();}else play().then(()=>setTimeout(()=>player&&player.seekTo&&player.seekTo(t,true),1500));}
-async function setLabel(v){const c=cur();if(!c)return;c.label=c.label===v?"":v;refreshCard(c);await api("/api/label",{id:c.id,v:c.label});toast(c.label?(c.label==="good"?"Нужно":"Мусор"):"Разметка снята");}
+async function setLabel(v){const c=cur();if(!c)return;c.label=c.label===v?"":v;refreshCard(c);renderWhy(c.label==="bad");await api("/api/label",{id:c.id,v:c.label});toast(c.label?(c.label==="good"?"Нужно":"Мусор — укажите причину"):"Разметка снята");}
+const WHY=["Не про суставы","Не переносится в нутру","Слабый хук","Держится на личности автора","Формат не повторить","Уже продаёт свой товар","Не та аудитория / гео","Риск модерации"];
+function renderWhy(focus){
+  const c=cur(),box=$("whyBox"); if(!box)return;
+  if(!c||c.label!=="bad"){box.innerHTML="";return;}
+  const have=(c.reason||"").split(";").map(s=>s.trim()).filter(Boolean);
+  box.innerHTML=`<div class="why"><div style="font-size:12px;color:#FFD3C9;font-weight:600">Почему не подходит?</div>
+    <div class="chips">${WHY.map((w,i)=>`<button class="chip ${have.includes(w)?"on":""}" onclick="togWhy(${i})">${w}</button>`).join("")}</div>
+    <input id="whyIn" placeholder="Своими словами… Enter — сохранить и к следующему, Esc — закрыть" value="${e(c.reason||"")}"
+      onkeydown="if(event.key==='Enter'){saveWhy(true)}else if(event.key==='Escape'){this.blur()}" onblur="saveWhy(false)"></div>`;
+  if(focus)setTimeout(()=>{const i=$("whyIn");if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},30);
+}
+function togWhy(i){const w=WHY[i],inp=$("whyIn");let a=inp.value.split(";").map(s=>s.trim()).filter(Boolean);a=a.includes(w)?a.filter(x=>x!==w):[...a,w];inp.value=a.join("; ");saveWhy(false,true);}
+async function saveWhy(next,rerender){
+  const c=cur(),inp=$("whyIn"); if(!c||!inp)return; const val=inp.value.trim();
+  if(val===(c.reason||"")){if(next){inp.blur();goNext();}return;}
+  c.reason=val; updRow(c); if(rerender)renderWhy(true);
+  await api("/api/label",{id:c.id,reason:val}); toast("Причина сохранена");
+  if(next){inp.blur();goNext();}
+}
+function goNext(){const i=LIST.findIndex(x=>x.id===selId);const nx=LIST[i+1];if(nx)select(nx.id);}
 async function hide(){const c=cur();if(!c)return;c.hidden=c.hidden?0:1;refreshCard(c);await api("/api/hide",{id:c.id,hidden:!!c.hidden});toast(c.hidden?"Скрыто":"Возвращено");}
 function refreshCard(c){updRow(c);renderQueues();
   const acts=document.querySelector(".acts"); if(acts){acts.querySelector(".g").classList.toggle("off",c.label!=="good");acts.querySelector(".b").classList.toggle("on",c.label==="bad");}

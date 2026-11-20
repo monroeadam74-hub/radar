@@ -7,7 +7,7 @@ on:
   workflow_dispatch:         # кнопка «Run workflow» для ручного запуска
     inputs:
       mode:
-        description: "full — поиск + разбор; analyze — только разобрать уже найденное"
+        description: "full — поиск + разбор; analyze — только разобрать уже найденное; thumbs — только обложки TikTok"
         default: "full"
       max_analyze:
         description: "Сколько роликов разобрать за запуск (пусто = из настроек)"
