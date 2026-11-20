@@ -1,0 +1,35 @@
+name: deploy-web
+
+on:
+  push:
+    branches: [main]
+    paths: ["worker/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Найти ID базы radar-db
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database?name=radar-db" \
+            | python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print(r[0]['uuid'] if r else '')")
+          if [ -z "$ID" ]; then echo "База radar-db не найдена"; exit 1; fi
+          sed -i "s/__D1_ID__/$ID/" worker/wrangler.toml
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          workingDirectory: worker
+          command: deploy
+          secrets: |
+            APP_PASSWORD
+            GH_TOKEN
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}

@@ -1,0 +1,17 @@
+name = "radar"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "radar-db"
+database_id = "__D1_ID__"   # подставляется автоматически при деплое
+
+[vars]
+GH_REPO = "monroeadam74-hub/radar"
+GH_BRANCH = "main"

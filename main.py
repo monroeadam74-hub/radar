@@ -67,6 +67,7 @@ SCHEMA = [
         lang TEXT, verticals TEXT, first_seen TEXT, last_seen TEXT)""",
     "CREATE TABLE IF NOT EXISTS runs (ts TEXT, found INTEGER, new INTEGER, analyzed INTEGER, cost_usd REAL, log TEXT)",
     "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)",
+    "CREATE TABLE IF NOT EXISTS labels (id TEXT PRIMARY KEY, v TEXT, note TEXT, hidden INTEGER DEFAULT 0, ts TEXT)",
     "CREATE INDEX IF NOT EXISTS i_snap ON snapshots(video_id)",
     "CREATE INDEX IF NOT EXISTS i_vid_author ON videos(author_id)",
 ]
@@ -445,10 +446,30 @@ def report(db, new_ids, stats):
 
 
 # ------------------------------------------------------------------ ГЛАВНОЕ
+def load_settings(db):
+    """Настройки живут в базе (их меняют в веб-интерфейсе). Первый раз берём из config.yaml."""
+    global CFG, S
+    row = db.q("SELECT v FROM kv WHERE k='settings'")
+    if row and row[0]["v"]:
+        try:
+            cfg = json.loads(row[0]["v"])
+            if cfg.get("verticals"):
+                CFG = {**CFG, **cfg}
+                CFG["settings"] = {**S, **cfg.get("settings", {})}
+        except Exception as e:
+            log("Настройки из базы не прочитались, беру config.yaml:", e)
+    else:
+        db.q("INSERT OR REPLACE INTO kv VALUES ('settings', ?)",
+             [{"settings": CFG["settings"], "verticals": CFG["verticals"]}])
+        log("Настройки сохранены в базу из config.yaml")
+    S = CFG["settings"]
+
+
 def main():
     db = DB()
     for s in SCHEMA:
         db.q(s)
+    load_settings(db)
     found, new_ids, analyzed = 0, set(), 0
     budget = S["max_analyze_per_run"]
     for vertical, v in CFG["verticals"].items():
@@ -482,6 +503,8 @@ def main():
         for r in db.q("SELECT * FROM videos WHERE vertical=? AND status='queued'", [vertical]):
             if r["id"] not in ids_now:
                 keep.append(dict(r, raw_id=r["id"][3:]))
+        hidden = {r["id"] for r in db.q("SELECT id FROM labels WHERE hidden=1")}
+        keep = [c for c in keep if c["id"] not in hidden]
         keep.sort(key=lambda c: c["views"], reverse=True)
         keep = keep[:max(0, budget - analyzed)]
         log(f"[{vertical}] на разбор {len(keep)} (языки {S['langs']}, тема)")

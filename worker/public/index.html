@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Радар</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--b:#e5e7eb;--t:#111827;--m:#6b7280;--g:#16a34a;--r:#dc2626;--bl:#2563eb;--y:#f59e0b}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;margin:0;background:var(--bg);color:var(--t)}
+a{color:var(--bl)}
+button{cursor:pointer;border:1px solid var(--b);background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;color:var(--t)}
+button.primary{background:var(--bl);color:#fff;border-color:var(--bl)}
+select,input,textarea{padding:6px 8px;border:1px solid var(--b);border-radius:8px;font-size:13px;font-family:inherit;background:#fff}
+textarea{width:100%}
+.top{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--b)}
+.nav{display:flex;gap:4px;align-items:center;padding:8px 16px;flex-wrap:wrap}
+.nav h1{font-size:17px;margin:0 14px 0 0}
+.nav .tab{border:none;background:none;padding:8px 12px;font-size:14px;color:var(--m);border-radius:8px}
+.nav .tab.on{background:#eef2ff;color:var(--bl);font-weight:600}
+.tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 16px 10px}
+.stats{font-size:12px;color:var(--m);margin-left:auto}
+.view{display:none;padding:16px}.view.on{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--b);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.card.good{box-shadow:0 0 0 3px var(--g)}.card.bad{box-shadow:0 0 0 3px var(--r);opacity:.7}.card.hid{opacity:.45}
+.pl{position:relative;background:#000;aspect-ratio:9/16;max-height:560px;display:flex;align-items:center;justify-content:center;color:#fff}
+.pl iframe,.pl>div{width:100%;height:100%;border:0}
+.pl .start{background:#fff;color:#111;font-size:15px;padding:10px 16px}
+.sub{position:absolute;left:6%;right:6%;bottom:12%;text-align:center;pointer-events:none}
+.sub span{background:rgba(0,0,0,.72);color:#fff;font-size:15px;line-height:1.35;padding:3px 8px;border-radius:6px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.subsel{position:absolute;top:8px;right:8px;z-index:2;font-size:12px;padding:3px 6px}
+.body{padding:10px 12px;font-size:13px;line-height:1.45}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;align-items:center}
+.tag{padding:2px 8px;border-radius:999px;background:#f3f4f6;font-size:12px}
+.tag.ok{background:#dcfce7}.tag.no{background:#fee2e2}.tag.score{background:#dbeafe;font-weight:700}.tag.out{background:#fef3c7}
+.muted{color:var(--m)}
+details{margin-top:6px}summary{cursor:pointer;color:var(--m)}
+ul{padding-left:16px;margin:4px 0}
+.lab{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.lab input{flex:1;min-width:120px}
+.lab .y.on{background:var(--g);color:#fff;border-color:var(--g)}.lab .n.on{background:var(--r);color:#fff;border-color:var(--r)}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:12px;overflow:hidden;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--b);text-align:left;vertical-align:top}
+th{background:#f9fafb;font-weight:600;position:sticky;top:0}
+.panel{background:#fff;border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px;max-width:900px}
+.panel h3{margin:0 0 10px;font-size:15px}
+.fld{display:grid;grid-template-columns:220px 1fr;gap:8px;align-items:center;margin-bottom:8px}
+.login{max-width:340px;margin:12vh auto;background:#fff;border:1px solid var(--b);border-radius:14px;padding:24px}
+.login input{width:100%;margin:10px 0}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;z-index:20}
+pre{white-space:pre-wrap;font-size:12px;background:#f9fafb;padding:8px;border-radius:8px;max-height:260px;overflow:auto}
+.empty{padding:40px;text-align:center;color:var(--m)}
+@media(max-width:600px){.fld{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="loginBox" class="login" style="display:none">
+  <h2 style="margin-top:0">🔎 Радар</h2>
+  <div class="muted">Введите пароль</div>
+  <input id="pw" type="password" placeholder="Пароль" onkeydown="if(event.key==='Enter')login()">
+  <button class="primary" onclick="login()" style="width:100%">Войти</button>
+  <div id="loginErr" style="color:var(--r);margin-top:8px"></div>
+</div>
+
+<div id="app" style="display:none">
+<div class="top">
+  <div class="nav">
+    <h1>🔎 Радар</h1>
+    <button class="tab on" data-v="videos">Ролики</button>
+    <button class="tab" data-v="authors">Страницы</button>
+    <button class="tab" data-v="settings">Настройки</button>
+    <button class="tab" data-v="runs">Запуски</button>
+    <span class="stats" id="st"></span>
+  </div>
+  <div class="tools" id="vtools">
+    <select id="fv"><option value="">Все вертикали</option></select>
+    <select id="fp"><option value="">Все площадки</option><option>YouTube</option><option>TikTok</option></select>
+    <select id="fs">
+      <option value="analyzed">Разобранные</option>
+      <option value="">Все статусы</option>
+      <option value="queued">Ждут разбора</option>
+      <option value="skip_topic">Отсеяны: не по теме</option>
+      <option value="skip_lang">Отсеяны: другой язык</option>
+    </select>
+    <select id="fl"><option value="">Любая разметка</option><option value="good">👍 Нужно</option><option value="bad">👎 Мусор</option><option value="none">Без разметки</option></select>
+    <select id="fh"><option value="0">Без скрытых</option><option value="1">Только скрытые</option><option value="all">Все</option></select>
+    <select id="fsc"><option value="0">Любой балл</option><option value="3">Балл ≥ 3</option><option value="4">Балл ≥ 4</option><option value="5">Балл 5</option></select>
+    <select id="so"><option value="views">По просмотрам</option><option value="score">По баллу нутры</option><option value="outlier">По outlier</option><option value="new">Сначала новые</option></select>
+    <input id="q" placeholder="Поиск: автор, подпись, хук, ключ" style="min-width:220px">
+  </div>
+</div>
+
+<div class="view on" id="v_videos"><div class="grid" id="grid"></div><div class="empty" id="vempty" style="display:none"></div>
+  <div style="text-align:center;margin:16px"><button id="more" onclick="page++;renderVideos(false)" style="display:none">Показать ещё</button></div></div>
+
+<div class="view" id="v_authors">
+  <div class="tools" style="padding:0 0 10px"><input id="aq" placeholder="Поиск страницы" oninput="renderAuthors()">
+    <select id="ap" onchange="renderAuthors()"><option value="">Все площадки</option><option>YouTube</option><option>TikTok</option></select>
+    <select id="arel" onchange="renderAuthors()"><option value="1">С выстрелами по теме</option><option value="0">Все</option></select></div>
+  <div style="overflow:auto"><table id="atable"></table></div>
+</div>
+
+<div class="view" id="v_settings"><div id="setbox"></div></div>
+
+<div class="view" id="v_runs">
+  <div class="panel"><h3>Сбор</h3>
+    <div class="muted" style="margin-bottom:10px">Автоматически раз в 2 дня. Новые ключи из «Настроек» подхватываются при следующем сборе.</div>
+    <button class="primary" onclick="runNow()">▶ Собрать сейчас</button> <span id="runmsg" class="muted"></span></div>
+  <div id="runs"></div>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let V = [], A = [], SET = null, page = 1;
+const PER = 60;
+const $ = id => document.getElementById(id);
+const e = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const n = x => x == null || x === "" ? "—" : Number(x).toLocaleString("ru-RU");
+const rawId = id => String(id).slice(3);
+function toast(t){ const el=$("toast"); el.textContent=t; el.style.display="block"; clearTimeout(el._t); el._t=setTimeout(()=>el.style.display="none",2500); }
+async function api(path, body){
+  const r = await fetch(path, body ? {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(body)} : {});
+  if (r.status === 401) { showLogin(); throw new Error("auth"); }
+  return r.json();
+}
+function showLogin(){ $("app").style.display="none"; $("loginBox").style.display="block"; }
+async function login(){
+  const r = await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password:$("pw").value})});
+  if (r.ok) { $("loginBox").style.display="none"; start(); } else $("loginErr").textContent="Неверный пароль";
+}
+
+// ---------- tabs
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x===b));
+  document.querySelectorAll(".view").forEach(x => x.classList.toggle("on", x.id==="v_"+b.dataset.v));
+  $("vtools").style.display = b.dataset.v==="videos" ? "flex" : "none";
+  if (b.dataset.v==="authors") loadAuthors();
+  if (b.dataset.v==="settings") loadSettings();
+  if (b.dataset.v==="runs") loadRuns();
+});
+
+// ---------- videos
+const STATUS = {analyzed:"разобран", queued:"ждёт разбора", skip_topic:"не по теме", skip_lang:"другой язык"};
+function filtered(){
+  const fv=$("fv").value, fp=$("fp").value, fs=$("fs").value, fl=$("fl").value, fh=$("fh").value, fsc=+$("fsc").value, so=$("so").value, q=$("q").value.toLowerCase();
+  let r = V.filter(c => (!fv||c.vertical===fv) && (!fp||c.platform===fp) && (!fs||c.status===fs)
+    && (fh==="all" || String(c.hidden||0)===fh)
+    && (!fl || (fl==="none" ? !c.label : c.label===fl))
+    && (!fsc || (c.nutra_score||0) >= fsc)
+    && (!q || [c.author,c.title,c.keyword,(c.analysis||{}).hook_0_3s,(c.analysis||{}).cta].join(" ").toLowerCase().includes(q)));
+  const key = {views:c=>c.views||0, score:c=>(c.nutra_score||0)*1e12+(c.views||0), outlier:c=>c.outlier||0, new:c=>Date.parse(c.first_seen||0)||0}[so];
+  return r.sort((a,b)=>key(b)-key(a));
+}
+function renderVideos(reset=true){
+  if (reset) page = 1;
+  const r = filtered(), shown = r.slice(0, page*PER);
+  $("grid").innerHTML = shown.map(card).join("");
+  $("more").style.display = r.length > shown.length ? "inline-block" : "none";
+  $("vempty").style.display = r.length ? "none" : "block";
+  $("vempty").textContent = V.length ? "Ничего не найдено — поменяйте фильтры" : "Роликов пока нет — запустите сбор во вкладке «Запуски»";
+  const good=V.filter(x=>x.label==="good").length, bad=V.filter(x=>x.label==="bad").length;
+  $("st").textContent = `показано ${shown.length} из ${r.length} · всего ${V.length} · 👍 ${good} · 👎 ${bad}`;
+}
+function card(c){
+  const a = c.analysis || {}, cls = [c.label||"", c.hidden ? "hid" : ""].join(" ");
+  const subs = (c.subtitles||[]).map(s=>`<li><a href="#" onclick="seek('${c.id}',${s.start});return false">${s.start}с</a> ${e(s.ru)} <span class="muted">${e(s.orig)}</span></li>`).join("");
+  const ost = (a.on_screen_text||[]).map(s=>`<li><b>${e(s.t)}с</b> ${e(s.ru)} <span class="muted">${e(s.orig)}</span></li>`).join("");
+  const st = STATUS[c.status] || c.status;
+  return `<div class="card ${cls}" id="c_${c.id}">
+   <div class="pl" id="p_${c.id}"><button class="start" onclick="play('${c.id}')">▶ Смотреть</button></div>
+   <div class="body">
+    <div class="row"><span class="tag">${e(c.platform)}</span><span class="tag ${c.status==="analyzed"?"ok":(c.status||"").startsWith("skip")?"no":""}">${e(st)}</span>
+      ${c.nutra_score?`<span class="tag score">нутра ${c.nutra_score}/5</span>`:""}${c.outlier?`<span class="tag out">×${c.outlier}</span>`:""}
+      ${c.hidden?`<span class="tag no">скрыт</span>`:""}</div>
+    <div><b><a href="${e(authorUrl(c))}" target="_blank">@${e(c.author)}</a></b> · ${n(c.views)} просм. · ${n(c.followers)} подп. · ${c.duration||"?"} с · ${e(c.published||"")}</div>
+    <div class="muted">${e((c.title||"").slice(0,160))}</div>
+    <div class="muted">ключ: ${e(c.keyword)}${c.prefilter?` · фильтр: ${e(c.prefilter)}`:""}</div>
+    ${a.hook_0_3s?`<div style="margin-top:6px"><b>Хук:</b> ${e(a.hook_0_3s)} <span class="muted">(${e(a.hook_type)})</span></div>
+      <div><b>Формат:</b> ${e(a.format)} · <b>Тип:</b> ${e(a.content_type)}</div>
+      <div><b>CTA:</b> ${e(a.cta)} <span class="muted">(${e(a.cta_mechanic)})</span></div>
+      <div><b>Почему работает:</b> ${e(a.why_it_works)}</div>
+      <div><b>Как адаптировать:</b> ${e(a.how_to_adapt)}</div>
+      <div><b>Под нутру:</b> ${e(a.nutra_reason)}</div>
+      <div><b>Модерация:</b> ${e(a.moderation_risk)}</div>
+      <details><summary>Субтитры RU (${(c.subtitles||[]).length})</summary><ul>${subs||"<li>речи нет</li>"}</ul></details>
+      <details><summary>Надписи на экране</summary><ul>${ost||"<li>нет</li>"}</ul></details>`:""}
+    <div style="margin-top:6px"><a href="${e(c.url)}" target="_blank">Открыть оригинал ↗</a></div>
+    <div class="lab">
+      <button class="y ${c.label==="good"?"on":""}" onclick="setLabel('${c.id}','good')">👍 Нужно</button>
+      <button class="n ${c.label==="bad"?"on":""}" onclick="setLabel('${c.id}','bad')">👎 Мусор</button>
+      <button onclick="hide('${c.id}')">${c.hidden?"Вернуть":"🙈 Скрыть"}</button>
+      <input placeholder="комментарий" value="${e(c.note||"")}" onchange="setNote('${c.id}',this.value)">
+    </div>
+   </div></div>`;
+}
+function authorUrl(c){ return c.platform==="TikTok" ? `https://www.tiktok.com/@${c.author}` : `https://www.youtube.com/channel/${String(c.author_id||"").slice(3)}`; }
+const byId = id => V.find(x=>x.id===id);
+async function setLabel(id, v){ const c=byId(id); const nv = c.label===v ? "" : v; c.label=nv; renderVideos(false); await api("/api/label",{id, v:nv}); }
+async function setNote(id, t){ byId(id).note=t; await api("/api/label",{id, note:t}); toast("Комментарий сохранён"); }
+async function hide(id){ const c=byId(id); c.hidden = c.hidden?0:1; renderVideos(false); await api("/api/hide",{id, hidden:!!c.hidden}); toast(c.hidden?"Скрыто":"Возвращено"); }
+
+// ---------- player + subtitles
+let ytReady = null; const players = {}; let subMode = "ru";
+function loadYT(){ if (ytReady) return ytReady; ytReady = new Promise(res=>{ window.onYouTubeIframeAPIReady=res; const s=document.createElement("script"); s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s);}); return ytReady; }
+async function play(id){
+  const c = byId(id), box = $("p_"+id);
+  if (c.platform === "TikTok") { box.innerHTML = `<iframe src="https://www.tiktok.com/embed/v2/${rawId(id)}" allow="autoplay;fullscreen"></iframe>`; return; }
+  box.innerHTML = `<div id="yt_${id}"></div><select class="subsel" onchange="subMode=this.value"><option value="ru">Субтитры RU</option><option value="orig">Оригинал</option><option value="off">Без субтитров</option></select><div class="sub" id="s_${id}"></div>`;
+  box.querySelector(".subsel").value = subMode;
+  await loadYT();
+  players[id] = new YT.Player("yt_"+id, {videoId: rawId(id), playerVars:{autoplay:1, loop:1, playlist:rawId(id), playsinline:1, rel:0}});
+  const subs = c.subtitles || [];
+  clearInterval(players[id]._t);
+  players[id]._t = setInterval(()=>{
+    const p = players[id]; if (!p || !p.getCurrentTime) return;
+    const t = p.getCurrentTime(), s = subs.find(x => t >= x.start && t < x.end);
+    const el = $("s_"+id); if (!el) return clearInterval(p._t);
+    el.innerHTML = s && subMode!=="off" ? `<span>${e(subMode==="ru"?s.ru:s.orig)}</span>` : "";
+  }, 200);
+}
+function seek(id, t){ const p = players[id]; if (p && p.seekTo) p.seekTo(t, true); else play(id).then(()=>setTimeout(()=>players[id]&&players[id].seekTo&&players[id].seekTo(t,true),1500)); }
+
+// ---------- authors
+async function loadAuthors(){ if (!A.length) A = (await api("/api/authors")).authors || []; renderAuthors(); }
+function renderAuthors(){
+  const q=$("aq").value.toLowerCase(), ap=$("ap").value, rel=$("arel").value==="1";
+  const r = A.filter(a => (!q || (a.handle||"").toLowerCase().includes(q)) && (!ap||a.platform===ap) && (!rel || (a.relevant_shots||0) > 0));
+  $("atable").innerHTML = `<tr><th>Страница</th><th>Площадка</th><th>Подписчики</th><th>Выстрелов</th><th>По теме</th><th>Макс. просмотры</th><th>Лучший балл</th><th>Тип контента</th><th>Язык</th><th>Вертикали</th><th></th></tr>` +
+    r.map(a=>`<tr><td><a href="${e(a.url)}" target="_blank"><b>@${e(a.handle)}</b></a></td><td>${e(a.platform)}</td><td>${n(a.followers)}</td><td>${a.shots||0}</td>
+      <td><b>${a.relevant_shots||0}</b></td><td>${n(a.max_views)}</td><td>${a.best_score||"—"}</td><td>${e(a.main_type||"")}</td><td>${e(a.lang||"")}</td><td>${e(a.verticals||"")}</td>
+      <td><button onclick="showAuthor('${e(a.handle)}')">Ролики</button></td></tr>`).join("");
+}
+function showAuthor(h){ $("q").value=h; $("fs").value=""; document.querySelector('.tab[data-v="videos"]').click(); renderVideos(); }
+
+// ---------- settings
+async function loadSettings(){ SET = (await api("/api/settings")).settings; renderSettings(); }
+function renderSettings(){
+  if (!SET) { $("setbox").innerHTML = `<div class="panel">Настройки появятся после первого сбора (их создаст сборщик из config.yaml).</div>`; return; }
+  const s = SET.settings || {};
+  const g = (k,label,hint="") => `<div class="fld"><label>${label}<div class="muted" style="font-size:12px">${hint}</div></label><input id="g_${k}" value="${e(Array.isArray(s[k])?s[k].join(", "):s[k])}"></div>`;
+  let h = `<div class="panel"><h3>Общие</h3>
+    ${g("min_views","Порог просмотров","например 1000000")}
+    ${g("months_back","Свежесть, месяцев")}
+    ${g("max_duration_sec","Макс. длительность, сек")}
+    ${g("langs","Языки","через запятую: en, es")}
+    ${g("yt_region","Регион YouTube","US, GB, ...")}
+    ${g("tt_region","Регион TikTok")}
+    ${g("tt_results_per_keyword","TikTok: роликов на ключ")}
+    ${g("max_analyze_per_run","Разборов за запуск","главный регулятор расходов")}
+    ${g("digest_top","Роликов в Telegram-дайджесте")}</div>`;
+  for (const [k, v] of Object.entries(SET.verticals || {})) {
+    h += `<div class="panel" data-vk="${e(k)}"><h3>Вертикаль: <input class="vname" value="${e(v.name||k)}"> <span class="muted">(${e(k)})</span>
+      <button style="float:right" onclick="delVertical('${e(k)}')">Удалить</button></h3>
+      <div class="muted">Ключевые слова — по одному в строке</div>
+      <textarea class="vkw" rows="10">${e((v.keywords||[]).join("\n"))}</textarea>
+      <details><summary>Шкала «подходит под нутру» (для ИИ)</summary><textarea class="vscale" rows="6">${e(v.nutra_scale||"")}</textarea></details></div>`;
+  }
+  h += `<div class="panel"><button onclick="addVertical()">+ Добавить вертикаль</button> <button class="primary" onclick="saveSettings()">💾 Сохранить настройки</button></div>`;
+  $("setbox").innerHTML = h;
+}
+function collectSettings(){
+  const s = {...(SET.settings||{})};
+  for (const k of Object.keys(s)) { const el=$("g_"+k); if (!el) continue;
+    s[k] = k==="langs" ? el.value.split(",").map(x=>x.trim()).filter(Boolean) : (isNaN(+el.value) || el.value.trim()==="" ? el.value.trim() : +el.value); }
+  const verticals = {};
+  document.querySelectorAll("[data-vk]").forEach(p => { const k=p.dataset.vk;
+    verticals[k] = {...(SET.verticals[k]||{}), name:p.querySelector(".vname").value.trim(),
+      keywords:p.querySelector(".vkw").value.split("\n").map(x=>x.trim()).filter(Boolean), nutra_scale:p.querySelector(".vscale").value}; });
+  return {settings:s, verticals};
+}
+async function saveSettings(){ SET = collectSettings(); await api("/api/settings", SET); toast("Сохранено — применится при следующем сборе"); renderSettings(); }
+function addVertical(){ const k = prompt("Код вертикали латиницей (например weight_loss):"); if (!k) return; SET = collectSettings();
+  SET.verticals[k] = {name:k, keywords:[], nutra_scale:"5 = идеально подходит ...\n1 = не подходит"}; renderSettings(); }
+function delVertical(k){ if (!confirmDel(k)) return; SET = collectSettings(); delete SET.verticals[k]; renderSettings(); toast("Удалено — нажмите «Сохранить»"); }
+function confirmDel(k){ return window.prompt(`Чтобы удалить вертикаль, введите её код: ${k}`) === k; }
+
+// ---------- runs
+async function loadRuns(){
+  const r = (await api("/api/runs")).runs || [];
+  $("runs").innerHTML = r.length ? r.map(x=>`<div class="panel"><b>${e(x.ts)}</b> · найдено ${x.found} · новых ${x.new} · разобрано ${x.analyzed} · ~$${(+x.cost_usd||0).toFixed(3)}
+     <details><summary>Лог</summary><pre>${e(x.log)}</pre></details></div>`).join("") : `<div class="panel muted">Запусков ещё не было</div>`;
+}
+async function runNow(){ $("runmsg").textContent="Запускаю…"; const r = await api("/api/run", {});
+  $("runmsg").textContent = r.ok ? "Запущено. Результаты появятся через 5–15 минут — обновите страницу." : ("Ошибка: " + (r.error||"")); }
+
+// ---------- start
+["fv","fp","fs","fl","fh","fsc","so"].forEach(i=>$(i).onchange=()=>renderVideos()); $("q").oninput=()=>renderVideos();
+async function start(){
+  try { const d = await api("/api/videos"); V = d.videos || []; } catch(err) { return; }
+  $("app").style.display="block";
+  const verts = [...new Set(V.map(x=>x.vertical).filter(Boolean))];
+  $("fv").innerHTML = `<option value="">Все вертикали</option>` + verts.map(v=>`<option>${e(v)}</option>`).join("");
+  renderVideos();
+}
+start();
+</script>
+</body>
+</html>

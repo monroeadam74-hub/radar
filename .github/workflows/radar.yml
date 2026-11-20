@@ -1,0 +1,31 @@
+name: radar
+
+on:
+  schedule:
+    - cron: "17 3 */2 * *"   # раз в 2 дня в 03:17 UTC (06:17 МСК)
+  workflow_dispatch: {}      # кнопка «Run workflow» для ручного запуска
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python main.py
+        env:
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+          YOUTUBE_KEY: ${{ secrets.YOUTUBE_KEY }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: radar-report
+          path: report/
