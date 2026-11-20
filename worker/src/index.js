@@ -57,16 +57,26 @@ async function api(req, env, url) {
   }
 
   if (p === "/api/thumb") {
-    // обложка TikTok через официальный oEmbed (ссылка на картинку временная, поэтому берём на лету)
-    const id = (url.searchParams.get("id") || "").replace(/^tt_/, "");
+    // обложка TikTok: oEmbed по полной ссылке ролика -> сама картинка, кэш на неделю
+    const vid = url.searchParams.get("id") || "";
+    const id = vid.replace(/^tt_/, "");
     if (!/^\d+$/.test(id)) return new Response("bad id", { status: 400 });
-    const cache = caches.default, key = new Request(`https://thumb.cache/tt/${id}`);
-    let hit = await cache.match(key);
+    const cache = caches.default, key = new Request(`https://thumb.cache/tt2/${id}`);
+    const hit = await cache.match(key);
     if (hit) return hit;
-    const r = await fetch(`https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/${id}`, { headers: { "user-agent": "Mozilla/5.0" } });
+    let pageUrl = `https://www.tiktok.com/video/${id}`;
+    try {
+      const row = await env.DB.prepare("SELECT url, author FROM videos WHERE id=?").bind(vid).first();
+      if (row && row.url && row.url.includes("/video/")) pageUrl = row.url.split("?")[0];
+      else if (row && row.author) pageUrl = `https://www.tiktok.com/@${row.author}/video/${id}`;
+    } catch {}
+    const ua = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
+    const r = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(pageUrl)}`, { headers: ua });
     const j = r.ok ? await r.json().catch(() => null) : null;
-    if (!j || !j.thumbnail_url) return new Response("no thumb", { status: 404 });
-    const res = new Response(null, { status: 302, headers: { location: j.thumbnail_url, "cache-control": "public, max-age=3600" } });
+    if (!j || !j.thumbnail_url) return new Response("no thumb", { status: 404, headers: { "cache-control": "no-store" } });
+    const img = await fetch(j.thumbnail_url, { headers: ua });
+    if (!img.ok) return new Response(null, { status: 302, headers: { location: j.thumbnail_url, "cache-control": "no-store" } });
+    const res = new Response(img.body, { headers: { "content-type": img.headers.get("content-type") || "image/jpeg", "cache-control": "public, max-age=604800" } });
     await cache.put(key, res.clone());
     return res;
   }

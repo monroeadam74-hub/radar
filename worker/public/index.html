@@ -242,7 +242,7 @@ function row(c){
   const a=A_(c),s=c.nutra_score;
   const lb=c.label==="good"?`<span class="lbl good">нужно</span>`:c.label==="bad"?`<span class="lbl bad">мусор</span>`:"";
   return `<div class="row ${c.id===selId?"sel":""} ${c.label==="bad"?"bad":""} ${c.hidden?"hid":""}" id="r_${c.id}" onclick="select('${c.id}')">
-    <img class="th" loading="lazy" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
+    <img class="th" loading="lazy" referrerpolicy="no-referrer" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
     <div class="au"><b>@${e(c.author)}${lb}</b><span>${c.platform==="YouTube"?"YouTube":"TikTok"} · ${c.duration||"?"} с</span></div>
     <div>${short(c.views)}</div><div class="c4">${c.outlier?"×"+Math.round(c.outlier):"—"}</div>
     <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
@@ -261,7 +261,7 @@ function renderDet(autoplay){
   clearInterval(window._subT); player=null;
   $("det").innerHTML=`
    <div class="pl" id="pl">
-     <img alt="" src="${thumbSrc(c)}" onerror="this.remove()">
+     <img alt="" referrerpolicy="no-referrer" src="${thumbSrc(c)}" onerror="this.remove()">
      <button class="go" onclick="play()" aria-label="Смотреть"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#0B0D10"/></svg></button>
    </div>
    <div class="dbody">
