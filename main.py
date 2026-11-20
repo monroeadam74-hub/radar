@@ -228,16 +228,21 @@ def gemini():
     GEM["model"] = ENV("GEMINI_MODEL") or ("gemini-flash-lite-latest" if "gemini-flash-lite-latest" in ok
                                             else (sorted(ok, reverse=True) or ["gemini-flash-lite-latest"])[0])
     GEM["client"] = c
-    log("Gemini модель:", GEM["model"])
+    # запасные модели на случай перегрузки (503)
+    GEM["fallback"] = [m for m in ["gemini-flash-lite-latest", "gemini-flash-latest"] + sorted(ok, reverse=True)
+                       if m in names and m != GEM["model"]][:2]
+    log("Gemini модель:", GEM["model"], "| запасные:", GEM["fallback"])
     return c
 
 
 def ask(contents, label):
     from google.genai import types
     c = gemini()
-    for attempt in range(3):
+    models = [GEM["model"]] + GEM.get("fallback", [])
+    order = (models * 2)[:4]           # основная → запасные → снова основная
+    for attempt, model in enumerate(order):
         try:
-            r = c.models.generate_content(model=GEM["model"], contents=contents,
+            r = c.models.generate_content(model=model, contents=contents,
                 config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2))
             u = getattr(r, "usage_metadata", None)
             GEM["tin"] += getattr(u, "prompt_token_count", 0) or 0
@@ -247,10 +252,10 @@ def ask(contents, label):
                 txt = txt[4:]
             return json.loads(txt)
         except Exception as e:
-            log(f"  {label}: ошибка ({str(e)[:100]})")
-            if "429" in str(e) and attempt >= 1:
+            log(f"  {label}: ошибка {model} ({str(e)[:90]})")
+            if "429" in str(e) and attempt >= 2:
                 break
-            time.sleep(15 * (attempt + 1))
+            time.sleep(8 * (attempt + 1))
     return None
 
 
@@ -470,6 +475,9 @@ def main():
     for s in SCHEMA:
         db.q(s)
     load_settings(db)
+    # разобранные ролики не на нужном языке (определено при разборе) — в отсев
+    langs = ",".join("'%s'" % l.replace("'", "") for l in S["langs"])
+    db.q(f"UPDATE videos SET status='skip_lang' WHERE status='analyzed' AND lang<>'' AND substr(lang,1,2) NOT IN ({langs})")
     found, new_ids, analyzed = 0, set(), 0
     budget = S["max_analyze_per_run"]
     for vertical, v in CFG["verticals"].items():
@@ -485,16 +493,23 @@ def main():
                 upsert_video(db, c, None)
         log(f"[{vertical}] подходящих {len(cands)}, новых {len(fresh)}")
 
-        pre = prefilter(fresh, vertical) if fresh else {}
         keep = []
+        # ролики, которые префильтр не успел проверить в прошлый раз
+        fresh += [dict(r, raw_id=r["id"][3:]) for r in db.q("SELECT * FROM videos WHERE vertical=? AND status='prefilter'", [vertical])
+                  if r["id"] not in {c["id"] for c in fresh}]
+        pre = prefilter(fresh, vertical) if fresh else {}
         for c in fresh:
-            p = pre.get(c["id"], {})
+            p = pre.get(c["id"])
+            if not p:   # фильтр не ответил (перегрузка) — не пускаем вслепую, проверим в следующий запуск
+                upsert_video(db, c, "prefilter"); db.q("UPDATE videos SET status='prefilter' WHERE id=?", [c["id"]])
+                continue
             lang = (p.get("lang") or c.get("lang") or "").lower()[:2]
             c["lang"] = lang
             ok_lang = lang in S["langs"]
             ok_topic = p.get("relevant", True)
             status = "queued" if (ok_lang and ok_topic) else ("skip_lang" if not ok_lang else "skip_topic")
             upsert_video(db, c, status, pre=p.get("reason"))
+            db.q("UPDATE videos SET status=?, prefilter=?, lang=? WHERE id=?", [status, p.get("reason"), lang, c["id"]])
             new_ids.add(c["id"])
             if status == "queued":
                 keep.append(c)

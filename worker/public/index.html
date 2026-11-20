@@ -79,6 +79,7 @@ pre{white-space:pre-wrap;font-size:12px;background:#f9fafb;padding:8px;border-ra
       <option value="analyzed">Разобранные</option>
       <option value="">Все статусы</option>
       <option value="queued">Ждут разбора</option>
+      <option value="prefilter">Ждут фильтра</option>
       <option value="skip_topic">Отсеяны: не по теме</option>
       <option value="skip_lang">Отсеяны: другой язык</option>
     </select>
@@ -141,7 +142,7 @@ document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
 });
 
 // ---------- videos
-const STATUS = {analyzed:"разобран", queued:"ждёт разбора", skip_topic:"не по теме", skip_lang:"другой язык"};
+const STATUS = {analyzed:"разобран", queued:"ждёт разбора", prefilter:"ждёт фильтра", skip_topic:"не по теме", skip_lang:"другой язык"};
 function filtered(){
   const fv=$("fv").value, fp=$("fp").value, fs=$("fs").value, fl=$("fl").value, fh=$("fh").value, fsc=+$("fsc").value, so=$("so").value, q=$("q").value.toLowerCase();
   let r = V.filter(c => (!fv||c.vertical===fv) && (!fp||c.platform===fp) && (!fs||c.status===fs)
