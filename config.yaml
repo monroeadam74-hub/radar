@@ -12,6 +12,9 @@ settings:
   tt_results_per_keyword: 30
   tt_region: "US"
   digest_top: 10            # сколько роликов показывать в Telegram-дайджесте
+  search_youtube: true      # искать новые Shorts
+  search_tiktok: true       # искать новые TikTok (тратит Apify)
+  analyze_tiktok: true      # разбирать TikTok (скачивание видео тратит Apify)
 
 verticals:
   joints:

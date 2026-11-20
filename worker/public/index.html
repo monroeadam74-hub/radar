@@ -239,6 +239,7 @@ async function loadSettings(){ SET = (await api("/api/settings")).settings; rend
 function renderSettings(){
   if (!SET) { $("setbox").innerHTML = `<div class="panel">Настройки появятся после первого сбора (их создаст сборщик из config.yaml).</div>`; return; }
   const s = SET.settings || {};
+  const b = (k,label,hint="") => `<div class="fld"><label>${label}<div class="muted" style="font-size:12px">${hint}</div></label><label><input type="checkbox" id="b_${k}" ${s[k]!==false?"checked":""}> вкл</label></div>`;
   const g = (k,label,hint="") => `<div class="fld"><label>${label}<div class="muted" style="font-size:12px">${hint}</div></label><input id="g_${k}" value="${e(Array.isArray(s[k])?s[k].join(", "):s[k])}"></div>`;
   let h = `<div class="panel"><h3>Общие</h3>
     ${g("min_views","Порог просмотров","например 1000000")}
@@ -249,7 +250,10 @@ function renderSettings(){
     ${g("tt_region","Регион TikTok")}
     ${g("tt_results_per_keyword","TikTok: роликов на ключ")}
     ${g("max_analyze_per_run","Разборов за запуск","главный регулятор расходов")}
-    ${g("digest_top","Роликов в Telegram-дайджесте")}</div>`;
+    ${g("digest_top","Роликов в Telegram-дайджесте")}
+    ${b("search_youtube","Искать новые Shorts (YouTube)","бесплатно")}
+    ${b("search_tiktok","Искать новые TikTok","тратит Apify")}
+    ${b("analyze_tiktok","Разбирать TikTok","скачивание видео тратит Apify")}</div>`;
   for (const [k, v] of Object.entries(SET.verticals || {})) {
     h += `<div class="panel" data-vk="${e(k)}"><h3>Вертикаль: <input class="vname" value="${e(v.name||k)}"> <span class="muted">(${e(k)})</span>
       <button style="float:right" onclick="delVertical('${e(k)}')">Удалить</button></h3>
@@ -264,6 +268,7 @@ function collectSettings(){
   const s = {...(SET.settings||{})};
   for (const k of Object.keys(s)) { const el=$("g_"+k); if (!el) continue;
     s[k] = k==="langs" ? el.value.split(",").map(x=>x.trim()).filter(Boolean) : (isNaN(+el.value) || el.value.trim()==="" ? el.value.trim() : +el.value); }
+  for (const k of ["search_youtube","search_tiktok","analyze_tiktok"]) { const el=$("b_"+k); if (el) s[k]=el.checked; }
   const verticals = {};
   document.querySelectorAll("[data-vk]").forEach(p => { const k=p.dataset.vk;
     verticals[k] = {...(SET.verticals[k]||{}), name:p.querySelector(".vname").value.trim(),

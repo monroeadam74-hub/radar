@@ -468,6 +468,8 @@ def load_settings(db):
              [{"settings": CFG["settings"], "verticals": CFG["verticals"]}])
         log("Настройки сохранены в базу из config.yaml")
     S = CFG["settings"]
+    for k, d in {"search_youtube": True, "search_tiktok": True, "analyze_tiktok": True}.items():
+        S.setdefault(k, d)
 
 
 def main():
@@ -481,7 +483,13 @@ def main():
     found, new_ids, analyzed = 0, set(), 0
     budget = S["max_analyze_per_run"]
     for vertical, v in CFG["verticals"].items():
-        cands = collect_youtube(vertical, v["keywords"]) + collect_tiktok(vertical, v["keywords"])
+        cands = []
+        if S.get("search_youtube", True):
+            cands += collect_youtube(vertical, v["keywords"])
+        if S.get("search_tiktok", True):
+            cands += collect_tiktok(vertical, v["keywords"])
+        if not cands:
+            log(f"[{vertical}] поиск новых выключен — только разбор уже найденного")
         cands = [c for c in cands if c["views"] >= S["min_views"]
                  and (not c.get("duration") or c["duration"] <= S["max_duration_sec"])]
         found += len(cands)
@@ -524,6 +532,8 @@ def main():
         keep = keep[:max(0, budget - analyzed)]
         log(f"[{vertical}] на разбор {len(keep)} (языки {S['langs']}, тема)")
 
+        if not S.get("analyze_tiktok", True):
+            keep = [c for c in keep if c["platform"] != "TikTok"]
         tt_files = tiktok_download([c for c in keep if c["platform"] == "TikTok"])
         for c in keep:
             vb = None
