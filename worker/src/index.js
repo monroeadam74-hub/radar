@@ -56,6 +56,21 @@ async function api(req, env, url) {
     return json({ videos: rows });
   }
 
+  if (p === "/api/thumb") {
+    // обложка TikTok через официальный oEmbed (ссылка на картинку временная, поэтому берём на лету)
+    const id = (url.searchParams.get("id") || "").replace(/^tt_/, "");
+    if (!/^\d+$/.test(id)) return new Response("bad id", { status: 400 });
+    const cache = caches.default, key = new Request(`https://thumb.cache/tt/${id}`);
+    let hit = await cache.match(key);
+    if (hit) return hit;
+    const r = await fetch(`https://www.tiktok.com/oembed?url=https://www.tiktok.com/video/${id}`, { headers: { "user-agent": "Mozilla/5.0" } });
+    const j = r.ok ? await r.json().catch(() => null) : null;
+    if (!j || !j.thumbnail_url) return new Response("no thumb", { status: 404 });
+    const res = new Response(null, { status: 302, headers: { location: j.thumbnail_url, "cache-control": "public, max-age=3600" } });
+    await cache.put(key, res.clone());
+    return res;
+  }
+
   if (p === "/api/authors") {
     try {
       const r = await env.DB.prepare("SELECT * FROM authors ORDER BY relevant_shots DESC, max_views DESC LIMIT 1000").all();

@@ -26,7 +26,8 @@ textarea{width:100%}
 .card.good{box-shadow:0 0 0 3px var(--g)}.card.bad{box-shadow:0 0 0 3px var(--r);opacity:.7}.card.hid{opacity:.45}
 .pl{position:relative;background:#000;aspect-ratio:9/16;max-height:560px;display:flex;align-items:center;justify-content:center;color:#fff}
 .pl iframe,.pl>div{width:100%;height:100%;border:0}
-.pl .start{background:#fff;color:#111;font-size:15px;padding:10px 16px}
+.pl .start{position:relative;z-index:1;background:#fff;color:#111;font-size:15px;padding:10px 16px;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.pl img.th{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .sub{position:absolute;left:6%;right:6%;bottom:12%;text-align:center;pointer-events:none}
 .sub span{background:rgba(0,0,0,.72);color:#fff;font-size:15px;line-height:1.35;padding:3px 8px;border-radius:6px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .subsel{position:absolute;top:8px;right:8px;z-index:2;font-size:12px;padding:3px 6px}
@@ -169,7 +170,7 @@ function card(c){
   const ost = (a.on_screen_text||[]).map(s=>`<li><b>${e(s.t)}с</b> ${e(s.ru)} <span class="muted">${e(s.orig)}</span></li>`).join("");
   const st = STATUS[c.status] || c.status;
   return `<div class="card ${cls}" id="c_${c.id}">
-   <div class="pl" id="p_${c.id}"><button class="start" onclick="play('${c.id}')">▶ Смотреть</button></div>
+   <div class="pl" id="p_${c.id}">${thumb(c)}<button class="start" onclick="play('${c.id}')">▶ Смотреть</button></div>
    <div class="body">
     <div class="row"><span class="tag">${e(c.platform)}</span><span class="tag ${c.status==="analyzed"?"ok":(c.status||"").startsWith("skip")?"no":""}">${e(st)}</span>
       ${c.nutra_score?`<span class="tag score">нутра ${c.nutra_score}/5</span>`:""}${c.outlier?`<span class="tag out">×${c.outlier}</span>`:""}
@@ -194,6 +195,12 @@ function card(c){
       <input placeholder="комментарий" value="${e(c.note||"")}" onchange="setNote('${c.id}',this.value)">
     </div>
    </div></div>`;
+}
+function thumb(c){
+  const id = rawId(c.id);
+  const src = c.platform === "YouTube" ? `https://i.ytimg.com/vi/${id}/oardefault.jpg` : `/api/thumb?id=${encodeURIComponent(c.id)}`;
+  const fb = c.platform === "YouTube" ? `this.onerror=null;this.src='https://i.ytimg.com/vi/${id}/hqdefault.jpg'` : `this.remove()`;
+  return `<img class="th" loading="lazy" alt="" src="${src}" onerror="${fb}">`;
 }
 function authorUrl(c){ return c.platform==="TikTok" ? `https://www.tiktok.com/@${c.author}` : `https://www.youtube.com/channel/${String(c.author_id||"").slice(3)}`; }
 const byId = id => V.find(x=>x.id===id);
