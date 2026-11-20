@@ -9,6 +9,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - name: Найти ID базы radar-db
@@ -28,8 +30,14 @@ jobs:
           workingDirectory: worker
           command: deploy
           secrets: |
-            APP_PASSWORD
             GH_TOKEN
         env:
-          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      # Пароль сайта: добавьте секрет APP_PASSWORD — он подхватится автоматически
+      - name: Пароль сайта (если задан)
+        if: ${{ env.APP_PASSWORD != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        working-directory: worker
+        run: echo "$APP_PASSWORD" | npx wrangler secret put APP_PASSWORD
