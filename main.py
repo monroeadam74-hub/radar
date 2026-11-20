@@ -470,6 +470,13 @@ def load_settings(db):
     S = CFG["settings"]
     for k, d in {"search_youtube": True, "search_tiktok": True, "analyze_tiktok": True}.items():
         S.setdefault(k, d)
+    if ENV("RADAR_MODE") == "analyze":
+        S["search_youtube"] = S["search_tiktok"] = False
+        S["analyze_tiktok"] = True
+        log("Режим: только разбор уже найденного (поиск выключен)")
+    if (ENV("RADAR_MAX_ANALYZE") or "").strip().isdigit():
+        S["max_analyze_per_run"] = int(ENV("RADAR_MAX_ANALYZE"))
+        log("Лимит разборов на этот запуск:", S["max_analyze_per_run"])
 
 
 def main():
