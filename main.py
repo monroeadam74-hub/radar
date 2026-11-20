@@ -480,6 +480,26 @@ def load_settings(db):
         log("Лимит разборов на этот запуск:", S["max_analyze_per_run"])
 
 
+def tt_cover_url(page, ua):
+    """Ссылка на обложку: oEmbed (если вернёт), иначе HTML страницы ролика (og:image / cover в JSON)."""
+    try:
+        j = requests.get("https://www.tiktok.com/oembed", params={"url": page}, headers=ua, timeout=20).json()
+        if j.get("thumbnail_url"):
+            return j["thumbnail_url"]
+    except Exception:
+        pass
+    for u in (page, page.replace("www.tiktok.com", "m.tiktok.com")):
+        try:
+            html = requests.get(u, headers={**ua, "accept-language": "en-US,en;q=0.9"}, timeout=25).text
+        except Exception:
+            continue
+        for pat in (r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', r'"originCover":"([^"]+)"', r'"cover":"(https?:[^"]+)"', r'"dynamicCover":"([^"]+)"'):
+            mm = re.search(pat, html)
+            if mm and mm.group(1).startswith("http"):
+                return mm.group(1).encode().decode("unicode_escape").replace("&amp;", "&")
+    return None
+
+
 def tiktok_thumbs(db, limit=400):
     """Обложки TikTok: oEmbed с сервера GitHub (Cloudflare TikTok не пускает) → уменьшенная JPEG в таблицу thumbs."""
     import base64, io
@@ -494,15 +514,10 @@ def tiktok_thumbs(db, limit=400):
         if "/video/" not in page:
             page = f"https://www.tiktok.com/@{r.get('author') or 'x'}/video/{vid}"
         try:
-            resp = requests.get("https://www.tiktok.com/oembed", params={"url": page}, headers=ua, timeout=20)
-            try:
-                j = resp.json()
-            except Exception:
-                j = {}
-            src = j.get("thumbnail_url")
+            src = tt_cover_url(page, ua)
             if not src:
                 if ok == 0 and rows.index(r) < 3:
-                    log(f"  oEmbed {r['id']} {page} → HTTP {resp.status_code}: {resp.text[:200]}")
+                    log(f"  обложка {r['id']}: не нашёл ссылку на странице {page}")
                 continue
             img = requests.get(src, headers=ua, timeout=30)
             img.raise_for_status()
