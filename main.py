@@ -494,9 +494,15 @@ def tiktok_thumbs(db, limit=400):
         if "/video/" not in page:
             page = f"https://www.tiktok.com/@{r.get('author') or 'x'}/video/{vid}"
         try:
-            j = requests.get("https://www.tiktok.com/oembed", params={"url": page}, headers=ua, timeout=20).json()
+            resp = requests.get("https://www.tiktok.com/oembed", params={"url": page}, headers=ua, timeout=20)
+            try:
+                j = resp.json()
+            except Exception:
+                j = {}
             src = j.get("thumbnail_url")
             if not src:
+                if ok == 0 and rows.index(r) < 3:
+                    log(f"  oEmbed {r['id']} {page} → HTTP {resp.status_code}: {resp.text[:200]}")
                 continue
             img = requests.get(src, headers=ua, timeout=30)
             img.raise_for_status()
@@ -509,6 +515,7 @@ def tiktok_thumbs(db, limit=400):
             except Exception:
                 pass
             if len(data) > 70000:
+                log(f"  обложка {r['id']} слишком большая: {len(data)} байт")
                 continue
             db.q("INSERT OR REPLACE INTO thumbs VALUES (?,?,?,?)", [r["id"], mime, base64.b64encode(data).decode(), NOW.isoformat(timespec="seconds")])
             ok += 1
