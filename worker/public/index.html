@@ -211,19 +211,23 @@ function buildSide(){
 }
 function togIdx(kind,i){const set=F[kind],v=(kind==="cta"?window._ctas:window._types)[i];set.has(v)?set.delete(v):set.add(v);renderList();}
 function renderQueues(){
-  const cnt={all:V.filter(x=>!x.hidden).length,none:V.filter(x=>!x.hidden&&!x.label).length,good:V.filter(x=>x.label==="good").length,bad:V.filter(x=>x.label==="bad").length,hidden:V.filter(x=>x.hidden).length};
+  const B=filtered({noQueue:true});
+  const cnt={all:B.filter(x=>!x.hidden).length,none:B.filter(x=>!x.hidden&&!x.label).length,good:B.filter(x=>!x.hidden&&x.label==="good").length,bad:B.filter(x=>!x.hidden&&x.label==="bad").length,hidden:B.filter(x=>x.hidden).length};
+  const S2=filtered({noStatus:true}), sc={}; S2.forEach(x=>sc[x.status]=(sc[x.status]||0)+1);
+  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
 function resetF(){F={score:0,cta:new Set(),types:new Set(),queue:"all"};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
 ["fv","fs","so","pYT","pTT"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
 $("q").oninput=()=>{limit=150;renderList();};
 
-function filtered(){
+function filtered(opt={}){
   const fv=$("fv").value,fs=$("fs").value,so=$("so").value,q=$("q").value.toLowerCase(),yt=$("pYT").checked,tt=$("pTT").checked;
   let r=V.filter(c=>{
+    if(!opt.noQueue){
     if(F.queue==="hidden"){if(!c.hidden)return false;}else if(c.hidden)return false;
-    if(F.queue==="none"&&c.label)return false; if((F.queue==="good"||F.queue==="bad")&&c.label!==F.queue)return false;
-    if(fv&&c.vertical!==fv)return false; if(fs&&c.status!==fs)return false;
+    if(F.queue==="none"&&c.label)return false; if((F.queue==="good"||F.queue==="bad")&&c.label!==F.queue)return false;}
+    if(fv&&c.vertical!==fv)return false; if(!opt.noStatus&&fs&&c.status!==fs)return false;
     if(c.platform==="YouTube"&&!yt)return false; if(c.platform==="TikTok"&&!tt)return false;
     if(F.score&&(c.nutra_score||0)<F.score)return false;
     if(F.cta.size&&!F.cta.has(A_(c).cta_mechanic))return false;
@@ -236,7 +240,7 @@ function filtered(){
 function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
 let LIST=[];
 function renderList(){
-  LIST=filtered(); const shown=LIST.slice(0,limit);
+  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
