@@ -3,308 +3,393 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Радар</title>
+<title>радар.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f5f6f8;--card:#fff;--b:#e5e7eb;--t:#111827;--m:#6b7280;--g:#16a34a;--r:#dc2626;--bl:#2563eb;--y:#f59e0b}
+:root{
+  --bg:#0B0D10; --s1:#12161B; --s2:#1A1F26; --s3:#232A33; --line:#232A33;
+  --t:#E8EAED; --t2:#C9CED6; --m:#9AA3AE;
+  --acc:#C6F432; --accbg:#1D2410; --mid:#F5C451; --bad:#FF9B85; --badbg:#3A1E19;
+}
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;margin:0;background:var(--bg);color:var(--t)}
-a{color:var(--bl)}
-button{cursor:pointer;border:1px solid var(--b);background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;color:var(--t)}
-button.primary{background:var(--bl);color:#fff;border-color:var(--bl)}
-select,input,textarea{padding:6px 8px;border:1px solid var(--b);border-radius:8px;font-size:13px;font-family:inherit;background:#fff}
-textarea{width:100%}
-.top{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--b)}
-.nav{display:flex;gap:4px;align-items:center;padding:8px 16px;flex-wrap:wrap}
-.nav h1{font-size:17px;margin:0 14px 0 0}
-.nav .tab{border:none;background:none;padding:8px 12px;font-size:14px;color:var(--m);border-radius:8px}
-.nav .tab.on{background:#eef2ff;color:var(--bl);font-weight:600}
-.tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 16px 10px}
-.stats{font-size:12px;color:var(--m);margin-left:auto}
-.view{display:none;padding:16px}.view.on{display:block}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
-.card{background:var(--card);border:1px solid var(--b);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
-.card.good{box-shadow:0 0 0 3px var(--g)}.card.bad{box-shadow:0 0 0 3px var(--r);opacity:.7}.card.hid{opacity:.45}
-.pl{position:relative;background:#000;aspect-ratio:9/16;max-height:560px;display:flex;align-items:center;justify-content:center;color:#fff}
-.pl iframe,.pl>div{width:100%;height:100%;border:0}
-.pl .start{position:relative;z-index:1;background:#fff;color:#111;font-size:15px;padding:10px 16px;box-shadow:0 2px 10px rgba(0,0,0,.25)}
-.pl img.th{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.sub{position:absolute;left:6%;right:6%;bottom:12%;text-align:center;pointer-events:none}
-.sub span{background:rgba(0,0,0,.72);color:#fff;font-size:15px;line-height:1.35;padding:3px 8px;border-radius:6px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
-.subsel{position:absolute;top:8px;right:8px;z-index:2;font-size:12px;padding:3px 6px}
-.body{padding:10px 12px;font-size:13px;line-height:1.45}
-.row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;align-items:center}
-.tag{padding:2px 8px;border-radius:999px;background:#f3f4f6;font-size:12px}
-.tag.ok{background:#dcfce7}.tag.no{background:#fee2e2}.tag.score{background:#dbeafe;font-weight:700}.tag.out{background:#fef3c7}
+html,body{margin:0;background:var(--bg);color:var(--t);font:14px/1.45 Inter,system-ui,sans-serif}
+a{color:var(--acc)}a:hover{color:#E3FF8A}
+button{font:inherit;cursor:pointer;color:var(--t)}
+input,select,textarea{font:inherit;color:var(--t);background:var(--s1);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.btn{height:38px;padding:0 16px;border-radius:999px;border:1px solid var(--s3);background:transparent;color:var(--t)}
+.btn:hover{border-color:#3A424D}
+.btn.pri{background:var(--acc);color:#0B0D10;border:none;font-weight:700}
+.btn.pri:hover{background:#D5FF55}
+.chip{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--s3);background:transparent;color:var(--t2)}
+.chip.on{border-color:var(--acc);background:var(--accbg);color:var(--acc);font-weight:600}
+.tag{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--s2);color:var(--t);font-size:12px;white-space:nowrap}
+.s5,.s4{background:var(--acc);color:#0B0D10;font-weight:700}.s3{background:var(--mid);color:#0B0D10;font-weight:700}.s2,.s1{background:var(--s3);color:var(--t);font-weight:700}
 .muted{color:var(--m)}
-details{margin-top:6px}summary{cursor:pointer;color:var(--m)}
-ul{padding-left:16px;margin:4px 0}
-.lab{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.lab input{flex:1;min-width:120px}
-.lab .y.on{background:var(--g);color:#fff;border-color:var(--g)}.lab .n.on{background:var(--r);color:#fff;border-color:var(--r)}
-table{border-collapse:collapse;width:100%;background:#fff;border-radius:12px;overflow:hidden;font-size:13px}
-th,td{padding:8px 10px;border-bottom:1px solid var(--b);text-align:left;vertical-align:top}
-th{background:#f9fafb;font-weight:600;position:sticky;top:0}
-.panel{background:#fff;border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px;max-width:900px}
-.panel h3{margin:0 0 10px;font-size:15px}
-.fld{display:grid;grid-template-columns:220px 1fr;gap:8px;align-items:center;margin-bottom:8px}
-.login{max-width:340px;margin:12vh auto;background:#fff;border:1px solid var(--b);border-radius:14px;padding:24px}
-.login input{width:100%;margin:10px 0}
-.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;z-index:20}
-pre{white-space:pre-wrap;font-size:12px;background:#f9fafb;padding:8px;border-radius:8px;max-height:260px;overflow:auto}
-.empty{padding:40px;text-align:center;color:var(--m)}
-@media(max-width:600px){.fld{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+.top{position:sticky;top:0;z-index:20;background:rgba(11,13,16,.96);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 24px}
+.logo{font:700 20px 'Space Grotesk',sans-serif;letter-spacing:-.01em}.logo b{color:var(--acc)}
+.nav{display:flex;gap:2px;flex-wrap:wrap}
+.nav button{border:none;background:none;color:var(--m);padding:8px 14px;border-radius:999px}
+.nav button.on{background:var(--s2);color:#fff;font-weight:600}
+.search{flex:1 1 260px;display:flex}.search input{flex:1;border-radius:999px;height:38px;padding:0 16px}
+.view{display:none}.view.on{display:block}
+.wrap{display:flex;flex-wrap:wrap;gap:16px;padding:16px 24px;align-items:flex-start}
+.side{flex:1 1 220px;max-width:240px;display:flex;flex-direction:column;gap:18px}
+.side h4{margin:0 0 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--m);font-weight:600}
+.q{display:flex;justify-content:space-between;width:100%;padding:8px 12px;border-radius:10px;border:1px solid transparent;background:none;color:var(--t2);text-align:left}
+.q:hover{background:var(--s1)}.q.on{background:var(--s1);border-color:var(--s3);color:#fff;font-weight:600}
+.ck{display:flex;gap:8px;align-items:center;padding:3px 0;color:var(--t2)}
+.ck input{accent-color:var(--acc);width:16px;height:16px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.list{flex:999 1 520px;min-width:0;background:var(--s1);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.lh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.grid-h,.row{display:grid;grid-template-columns:52px minmax(0,1.6fr) 100px 62px 56px minmax(0,2.4fr);gap:12px;align-items:center;padding:8px 16px}
+.grid-h{font-size:12px;color:var(--m);border-bottom:1px solid var(--line)}
+.row{border-top:1px solid #171B21;cursor:pointer;border-left:3px solid transparent}
+.row:hover{background:#151A20}.row.sel{background:var(--accbg);border-left-color:var(--acc)}
+.row.bad{opacity:.55}.row.hid{opacity:.4}
+.th{width:44px;height:72px;border-radius:7px;background:var(--s3);object-fit:cover;display:block}
+.au b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.au span{font-size:12px;color:var(--m)}
+.hook{color:var(--t2);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.lbl{margin-left:6px;font-size:11px;padding:1px 7px;border-radius:999px}
+.lbl.good{background:var(--acc);color:#0B0D10}.lbl.bad{background:var(--badbg);color:#FFD3C9}
+.more{padding:14px;text-align:center}
+.det{flex:1 1 380px;max-width:440px;background:var(--s1);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:sticky;top:76px;max-height:calc(100vh - 92px);display:flex;flex-direction:column}
+.pl{position:relative;background:#000;aspect-ratio:9/14;max-height:56vh;flex:0 0 auto}
+.pl iframe,.pl>.yt{position:absolute;inset:0;width:100%;height:100%;border:0}
+.pl img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.85}
+.pl .go{position:absolute;inset:0;margin:auto;width:64px;height:64px;border-radius:50%;border:none;background:var(--acc);display:flex;align-items:center;justify-content:center}
+.sub{position:absolute;left:6%;right:6%;bottom:9%;text-align:center;pointer-events:none;z-index:2}
+.sub span{background:rgba(0,0,0,.78);color:#fff;font-size:16px;line-height:1.4;padding:3px 8px;border-radius:6px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.pctl{position:absolute;top:10px;right:10px;z-index:3;display:flex;gap:4px}
+.pctl button{height:28px;padding:0 9px;border-radius:7px;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px}
+.pctl button.on{background:var(--acc);color:#0B0D10;font-weight:700}
+.dbody{padding:14px 16px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.acts{display:grid;grid-template-columns:1fr 1fr 44px;gap:8px}
+.acts .g{height:44px;border-radius:12px;border:none;background:var(--acc);color:#0B0D10;font-weight:700}
+.acts .g.off{background:transparent;border:1px solid var(--acc);color:var(--acc)}
+.acts .b{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent;color:var(--bad);font-weight:600}
+.acts .b.on{background:var(--badbg);border-color:var(--bad)}
+.acts .h{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent}
+.tabs{display:flex;gap:16px;border-bottom:1px solid var(--line)}
+.tabs button{border:none;background:none;color:var(--m);padding:8px 0;border-bottom:2px solid transparent}
+.tabs button.on{color:#fff;border-bottom-color:var(--acc);font-weight:600}
+dl{margin:0;display:grid;grid-template-columns:118px minmax(0,1fr);gap:8px 12px;font-size:13px}
+dt{color:var(--m)}dd{margin:0;color:var(--t)}
+.subl{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.subl li{display:grid;grid-template-columns:44px 1fr;gap:8px}
+.subl button{border:none;background:none;color:var(--acc);padding:0;text-align:left}
+.empty{padding:48px;text-align:center;color:var(--m)}
+.pad{padding:16px 24px}
+table{border-collapse:collapse;width:100%;background:var(--s1);border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:13px}
+th,td{padding:10px 12px;border-bottom:1px solid #171B21;text-align:left;vertical-align:top}
+th{color:var(--m);font-weight:600;background:#0F1317}
+.panel{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px;max-width:920px}
+.panel h3{margin:0 0 12px;font:700 16px 'Space Grotesk',sans-serif}
+.fld{display:grid;grid-template-columns:240px 1fr;gap:10px;align-items:center;margin-bottom:10px}
+.fld small{display:block;color:var(--m);font-size:12px}
+textarea{width:100%}
+pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid var(--line);padding:10px;border-radius:10px;max-height:300px;overflow:auto;color:var(--t2)}
+.login{max-width:360px;margin:14vh auto;background:var(--s1);border:1px solid var(--line);border-radius:16px;padding:28px}
+.login input{width:100%;margin:12px 0}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--acc);color:#0B0D10;font-weight:600;padding:10px 18px;border-radius:999px;display:none;z-index:50}
+.kbd{font-size:12px;color:var(--m)}.kbd b{display:inline-block;min-width:20px;text-align:center;padding:1px 6px;border:1px solid var(--s3);border-radius:6px;color:var(--t2);font-weight:600}
+@media(max-width:900px){.det{position:static;max-width:none;max-height:none}.side{max-width:none}.grid-h{display:none}.row{grid-template-columns:52px minmax(0,1fr) 70px}.row .c4,.row .c5,.row .hook{display:none}.fld{grid-template-columns:1fr}.kbd{display:none}}
 </style>
 </head>
 <body>
 <div id="loginBox" class="login" style="display:none">
-  <h2 style="margin-top:0">🔎 Радар</h2>
-  <div class="muted">Введите пароль</div>
-  <input id="pw" type="password" placeholder="Пароль" onkeydown="if(event.key==='Enter')login()">
-  <button class="primary" onclick="login()" style="width:100%">Войти</button>
-  <div id="loginErr" style="color:var(--r);margin-top:8px"></div>
+  <div class="logo">радар<b>.</b></div>
+  <label class="muted" for="pw" style="display:block;margin-top:12px">Пароль</label>
+  <input id="pw" type="password" onkeydown="if(event.key==='Enter')login()">
+  <button class="btn pri" style="width:100%" onclick="login()">Войти</button>
+  <div id="loginErr" style="color:var(--bad);margin-top:8px"></div>
 </div>
 
 <div id="app" style="display:none">
-<div class="top">
-  <div class="nav">
-    <h1>🔎 Радар</h1>
-    <button class="tab on" data-v="videos">Ролики</button>
-    <button class="tab" data-v="authors">Страницы</button>
-    <button class="tab" data-v="settings">Настройки</button>
-    <button class="tab" data-v="runs">Запуски</button>
-    <span class="stats" id="st"></span>
-  </div>
-  <div class="tools" id="vtools">
-    <select id="fv"><option value="">Все вертикали</option></select>
-    <select id="fp"><option value="">Все площадки</option><option>YouTube</option><option>TikTok</option></select>
-    <select id="fs">
-      <option value="analyzed">Разобранные</option>
-      <option value="">Все статусы</option>
-      <option value="queued">Ждут разбора</option>
-      <option value="prefilter">Ждут фильтра</option>
-      <option value="skip_topic">Отсеяны: не по теме</option>
-      <option value="skip_lang">Отсеяны: другой язык</option>
-    </select>
-    <select id="fl"><option value="">Любая разметка</option><option value="good">👍 Нужно</option><option value="bad">👎 Мусор</option><option value="none">Без разметки</option></select>
-    <select id="fh"><option value="0">Без скрытых</option><option value="1">Только скрытые</option><option value="all">Все</option></select>
-    <select id="fsc"><option value="0">Любой балл</option><option value="3">Балл ≥ 3</option><option value="4">Балл ≥ 4</option><option value="5">Балл 5</option></select>
-    <select id="so"><option value="views">По просмотрам</option><option value="score">По баллу нутры</option><option value="outlier">По outlier</option><option value="new">Сначала новые</option></select>
-    <input id="q" placeholder="Поиск: автор, подпись, хук, ключ" style="min-width:220px">
-  </div>
-</div>
+<header class="top">
+  <div class="logo">радар<b>.</b></div>
+  <nav class="nav" aria-label="Разделы">
+    <button class="on" data-v="videos">Ролики</button>
+    <button data-v="authors">Страницы</button>
+    <button data-v="settings">Настройки</button>
+    <button data-v="runs">Запуски</button>
+  </nav>
+  <label class="search"><span style="position:absolute;left:-9999px">Поиск</span><input id="q" placeholder="Поиск: автор, хук, подпись, ключ…"></label>
+  <span class="kbd"><b>↑</b><b>↓</b> выбор · <b>1</b> нужно · <b>2</b> мусор · <b>H</b> скрыть · <b>Space</b> play</span>
+</header>
 
-<div class="view on" id="v_videos"><div class="grid" id="grid"></div><div class="empty" id="vempty" style="display:none"></div>
-  <div style="text-align:center;margin:16px"><button id="more" onclick="page++;renderVideos(false)" style="display:none">Показать ещё</button></div></div>
+<section class="view on" id="v_videos">
+ <div class="wrap">
+  <aside class="side">
+    <div><h4>Очередь</h4><div id="queues"></div></div>
+    <div><h4>Вертикаль</h4><select id="fv" style="width:100%"></select></div>
+    <div><h4>Площадка</h4>
+      <label class="ck"><input type="checkbox" id="pYT" checked> YouTube Shorts</label>
+      <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label></div>
+    <div><h4>Статус</h4><select id="fs" style="width:100%">
+      <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
+      <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option></select></div>
+    <div><h4>Балл под нутру</h4><div class="chips" id="scoreChips"></div></div>
+    <div><h4>Механика CTA</h4><div id="ctaBox"></div></div>
+    <div><h4>Тип контента</h4><div id="typeBox"></div></div>
+    <div><h4>Сортировка</h4><select id="so" style="width:100%">
+      <option value="score">Балл, потом просмотры</option><option value="views">Просмотры</option><option value="outlier">Outlier (×)</option><option value="new">Сначала новые</option></select></div>
+    <button class="btn" onclick="resetF()">Сбросить фильтры</button>
+  </aside>
 
-<div class="view" id="v_authors">
-  <div class="tools" style="padding:0 0 10px"><input id="aq" placeholder="Поиск страницы" oninput="renderAuthors()">
+  <main class="list">
+    <div class="lh"><div id="cnt" class="muted"></div><div class="muted" id="lstat"></div></div>
+    <div class="grid-h"><div></div><div>Автор</div><div>Просмотры</div><div>×</div><div>Балл</div><div>Хук</div></div>
+    <div id="rows"></div>
+    <div class="more"><button class="btn" id="moreBtn" onclick="limit+=150;renderList()">Показать ещё</button></div>
+  </main>
+
+  <section class="det" id="det" aria-label="Ролик"><div class="empty">Выберите ролик в списке</div></section>
+ </div>
+</section>
+
+<section class="view" id="v_authors"><div class="pad">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <input id="aq" placeholder="Поиск страницы" oninput="renderAuthors()">
     <select id="ap" onchange="renderAuthors()"><option value="">Все площадки</option><option>YouTube</option><option>TikTok</option></select>
-    <select id="arel" onchange="renderAuthors()"><option value="1">С выстрелами по теме</option><option value="0">Все</option></select></div>
+    <select id="arel" onchange="renderAuthors()"><option value="1">С выстрелами по теме</option><option value="0">Все</option></select>
+  </div>
   <div style="overflow:auto"><table id="atable"></table></div>
-</div>
+</div></section>
 
-<div class="view" id="v_settings"><div id="setbox"></div></div>
+<section class="view" id="v_settings"><div class="pad" id="setbox"></div></section>
 
-<div class="view" id="v_runs">
-  <div class="panel"><h3>Сбор</h3>
-    <div class="muted" style="margin-bottom:10px">Автоматически раз в 2 дня. Новые ключи из «Настроек» подхватываются при следующем сборе.</div>
-    <button class="primary" onclick="runNow()">▶ Собрать сейчас</button> <span id="runmsg" class="muted"></span></div>
+<section class="view" id="v_runs"><div class="pad">
+  <div class="panel"><h3>Запуск</h3>
+    <div class="muted" style="margin-bottom:12px">Автозапуск выключен. «Только разобрать» не тратит Apify на поиск; «Искать и разобрать» берёт ключи и переключатели из Настроек.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn pri" onclick="runNow('analyze')">Только разобрать найденное</button>
+      <button class="btn" onclick="runNow('full')">Искать и разобрать</button>
+      <span id="runmsg" class="muted"></span></div></div>
   <div id="runs"></div>
-</div>
+</div></section>
 </div>
 <div class="toast" id="toast"></div>
 
 <script>
-let V = [], A = [], SET = null, page = 1;
-const PER = 60;
-const $ = id => document.getElementById(id);
-const e = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const n = x => x == null || x === "" ? "—" : Number(x).toLocaleString("ru-RU");
-const rawId = id => String(id).slice(3);
-function toast(t){ const el=$("toast"); el.textContent=t; el.style.display="block"; clearTimeout(el._t); el._t=setTimeout(()=>el.style.display="none",2500); }
-async function api(path, body){
-  const r = await fetch(path, body ? {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(body)} : {});
-  if (r.status === 401) { showLogin(); throw new Error("auth"); }
-  return r.json();
-}
-function showLogin(){ $("app").style.display="none"; $("loginBox").style.display="block"; }
-async function login(){
-  const r = await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password:$("pw").value})});
-  if (r.ok) { $("loginBox").style.display="none"; start(); } else $("loginErr").textContent="Неверный пароль";
-}
+let V=[], A=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), queue:"all"};
+const $=id=>document.getElementById(id);
+const e=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const n=x=>x==null||x===""?"—":Number(x).toLocaleString("ru-RU");
+const short=x=>x==null?"—":x>=1e6?(x/1e6).toFixed(1).replace(".0","")+" млн":x>=1e3?Math.round(x/1e3)+" тыс":String(x);
+const raw=id=>String(id).slice(3);
+const A_=c=>c.analysis||{};
+function toast(t){const el=$("toast");el.textContent=t;el.style.display="block";clearTimeout(el._t);el._t=setTimeout(()=>el.style.display="none",2200);}
+async function api(path,body){const r=await fetch(path,body?{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}:{});if(r.status===401){showLogin();throw new Error("auth");}return r.json();}
+function showLogin(){$("app").style.display="none";$("loginBox").style.display="block";}
+async function login(){const r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password:$("pw").value})});if(r.ok){$("loginBox").style.display="none";start();}else $("loginErr").textContent="Неверный пароль";}
 
-// ---------- tabs
-document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
-  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x===b));
-  document.querySelectorAll(".view").forEach(x => x.classList.toggle("on", x.id==="v_"+b.dataset.v));
-  $("vtools").style.display = b.dataset.v==="videos" ? "flex" : "none";
-  if (b.dataset.v==="authors") loadAuthors();
-  if (b.dataset.v==="settings") loadSettings();
-  if (b.dataset.v==="runs") loadRuns();
+document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("on",x===b));
+  document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.id==="v_"+b.dataset.v));
+  if(b.dataset.v==="authors")loadAuthors(); if(b.dataset.v==="settings")loadSettings(); if(b.dataset.v==="runs")loadRuns();
 });
 
-// ---------- videos
-const STATUS = {analyzed:"разобран", queued:"ждёт разбора", prefilter:"ждёт фильтра", skip_topic:"не по теме", skip_lang:"другой язык"};
+const QUEUES=[["all","Все"],["none","Неразмеченные"],["good","Нужно"],["bad","Мусор"],["hidden","Скрытые"]];
+function buildSide(){
+  const verts=[...new Set(V.map(x=>x.vertical).filter(Boolean))];
+  $("fv").innerHTML=`<option value="">Все</option>`+verts.map(v=>`<option>${e(v)}</option>`).join("");
+  $("scoreChips").innerHTML=[[0,"Любой"],[3,"3+"],[4,"4+"],[5,"5"]].map(([v,t])=>`<button class="chip ${F.score===v?"on":""}" onclick="F.score=${v};buildSide();renderList()">${t}</button>`).join("");
+  const ctas=[...new Set(V.map(x=>A_(x).cta_mechanic).filter(Boolean))].sort();
+  $("ctaBox").innerHTML=ctas.map((c,i)=>`<label class="ck"><input type="checkbox" ${F.cta.has(c)?"checked":""} onchange="togIdx('cta',${i})"> ${e(c)}</label>`).join("")||`<span class="muted">появится после разбора</span>`;
+  const types=[...new Set(V.map(x=>x.content_type).filter(Boolean))].sort();
+  $("typeBox").innerHTML=types.map((c,i)=>`<label class="ck"><input type="checkbox" ${F.types.has(c)?"checked":""} onchange="togIdx('types',${i})"> ${e(c.replace(/_/g," "))}</label>`).join("")||`<span class="muted">—</span>`;
+  window._ctas=ctas; window._types=types;
+  renderQueues();
+}
+function togIdx(kind,i){const set=F[kind],v=(kind==="cta"?window._ctas:window._types)[i];set.has(v)?set.delete(v):set.add(v);renderList();}
+function renderQueues(){
+  const cnt={all:V.filter(x=>!x.hidden).length,none:V.filter(x=>!x.hidden&&!x.label).length,good:V.filter(x=>x.label==="good").length,bad:V.filter(x=>x.label==="bad").length,hidden:V.filter(x=>x.hidden).length};
+  $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
+}
+function resetF(){F={score:0,cta:new Set(),types:new Set(),queue:"all"};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
+["fv","fs","so","pYT","pTT"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
+$("q").oninput=()=>{limit=150;renderList();};
+
 function filtered(){
-  const fv=$("fv").value, fp=$("fp").value, fs=$("fs").value, fl=$("fl").value, fh=$("fh").value, fsc=+$("fsc").value, so=$("so").value, q=$("q").value.toLowerCase();
-  let r = V.filter(c => (!fv||c.vertical===fv) && (!fp||c.platform===fp) && (!fs||c.status===fs)
-    && (fh==="all" || String(c.hidden||0)===fh)
-    && (!fl || (fl==="none" ? !c.label : c.label===fl))
-    && (!fsc || (c.nutra_score||0) >= fsc)
-    && (!q || [c.author,c.title,c.keyword,(c.analysis||{}).hook_0_3s,(c.analysis||{}).cta].join(" ").toLowerCase().includes(q)));
-  const key = {views:c=>c.views||0, score:c=>(c.nutra_score||0)*1e12+(c.views||0), outlier:c=>c.outlier||0, new:c=>Date.parse(c.first_seen||0)||0}[so];
+  const fv=$("fv").value,fs=$("fs").value,so=$("so").value,q=$("q").value.toLowerCase(),yt=$("pYT").checked,tt=$("pTT").checked;
+  let r=V.filter(c=>{
+    if(F.queue==="hidden"){if(!c.hidden)return false;}else if(c.hidden)return false;
+    if(F.queue==="none"&&c.label)return false; if((F.queue==="good"||F.queue==="bad")&&c.label!==F.queue)return false;
+    if(fv&&c.vertical!==fv)return false; if(fs&&c.status!==fs)return false;
+    if(c.platform==="YouTube"&&!yt)return false; if(c.platform==="TikTok"&&!tt)return false;
+    if(F.score&&(c.nutra_score||0)<F.score)return false;
+    if(F.cta.size&&!F.cta.has(A_(c).cta_mechanic))return false;
+    if(F.types.size&&!F.types.has(c.content_type))return false;
+    if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note].join(" ").toLowerCase().includes(q))return false;
+    return true;});
+  const key={views:c=>c.views||0,score:c=>(c.nutra_score||0)*1e12+(c.views||0),outlier:c=>c.outlier||0,new:c=>Date.parse(c.first_seen||0)||0}[so];
   return r.sort((a,b)=>key(b)-key(a));
 }
-function renderVideos(reset=true){
-  if (reset) page = 1;
-  const r = filtered(), shown = r.slice(0, page*PER);
-  $("grid").innerHTML = shown.map(card).join("");
-  $("more").style.display = r.length > shown.length ? "inline-block" : "none";
-  $("vempty").style.display = r.length ? "none" : "block";
-  $("vempty").textContent = V.length ? "Ничего не найдено — поменяйте фильтры" : "Роликов пока нет — запустите сбор во вкладке «Запуски»";
-  const good=V.filter(x=>x.label==="good").length, bad=V.filter(x=>x.label==="bad").length;
-  $("st").textContent = `показано ${shown.length} из ${r.length} · всего ${V.length} · 👍 ${good} · 👎 ${bad}`;
+function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
+let LIST=[];
+function renderList(){
+  LIST=filtered(); const shown=LIST.slice(0,limit);
+  $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
+  $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
+  $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
+  $("moreBtn").style.display=LIST.length>shown.length?"inline-block":"none";
 }
-function card(c){
-  const a = c.analysis || {}, cls = [c.label||"", c.hidden ? "hid" : ""].join(" ");
-  const subs = (c.subtitles||[]).map(s=>`<li><a href="#" onclick="seek('${c.id}',${s.start});return false">${s.start}с</a> ${e(s.ru)} <span class="muted">${e(s.orig)}</span></li>`).join("");
-  const ost = (a.on_screen_text||[]).map(s=>`<li><b>${e(s.t)}с</b> ${e(s.ru)} <span class="muted">${e(s.orig)}</span></li>`).join("");
-  const st = STATUS[c.status] || c.status;
-  return `<div class="card ${cls}" id="c_${c.id}">
-   <div class="pl" id="p_${c.id}">${thumb(c)}<button class="start" onclick="play('${c.id}')">▶ Смотреть</button></div>
-   <div class="body">
-    <div class="row"><span class="tag">${e(c.platform)}</span><span class="tag ${c.status==="analyzed"?"ok":(c.status||"").startsWith("skip")?"no":""}">${e(st)}</span>
-      ${c.nutra_score?`<span class="tag score">нутра ${c.nutra_score}/5</span>`:""}${c.outlier?`<span class="tag out">×${c.outlier}</span>`:""}
-      ${c.hidden?`<span class="tag no">скрыт</span>`:""}</div>
-    <div><b><a href="${e(authorUrl(c))}" target="_blank">@${e(c.author)}</a></b> · ${n(c.views)} просм. · ${n(c.followers)} подп. · ${c.duration||"?"} с · ${e(c.published||"")}</div>
-    <div class="muted">${e((c.title||"").slice(0,160))}</div>
-    <div class="muted">ключ: ${e(c.keyword)}${c.prefilter?` · фильтр: ${e(c.prefilter)}`:""}</div>
-    ${a.hook_0_3s?`<div style="margin-top:6px"><b>Хук:</b> ${e(a.hook_0_3s)} <span class="muted">(${e(a.hook_type)})</span></div>
-      <div><b>Формат:</b> ${e(a.format)} · <b>Тип:</b> ${e(a.content_type)}</div>
-      <div><b>CTA:</b> ${e(a.cta)} <span class="muted">(${e(a.cta_mechanic)})</span></div>
-      <div><b>Почему работает:</b> ${e(a.why_it_works)}</div>
-      <div><b>Как адаптировать:</b> ${e(a.how_to_adapt)}</div>
-      <div><b>Под нутру:</b> ${e(a.nutra_reason)}</div>
-      <div><b>Модерация:</b> ${e(a.moderation_risk)}</div>
-      <details><summary>Субтитры RU (${(c.subtitles||[]).length})</summary><ul>${subs||"<li>речи нет</li>"}</ul></details>
-      <details><summary>Надписи на экране</summary><ul>${ost||"<li>нет</li>"}</ul></details>`:""}
-    <div style="margin-top:6px"><a href="${e(c.url)}" target="_blank">Открыть оригинал ↗</a></div>
-    <div class="lab">
-      <button class="y ${c.label==="good"?"on":""}" onclick="setLabel('${c.id}','good')">👍 Нужно</button>
-      <button class="n ${c.label==="bad"?"on":""}" onclick="setLabel('${c.id}','bad')">👎 Мусор</button>
-      <button onclick="hide('${c.id}')">${c.hidden?"Вернуть":"🙈 Скрыть"}</button>
-      <input placeholder="комментарий" value="${e(c.note||"")}" onchange="setNote('${c.id}',this.value)">
-    </div>
-   </div></div>`;
+function row(c){
+  const a=A_(c),s=c.nutra_score;
+  const lb=c.label==="good"?`<span class="lbl good">нужно</span>`:c.label==="bad"?`<span class="lbl bad">мусор</span>`:"";
+  return `<div class="row ${c.id===selId?"sel":""} ${c.label==="bad"?"bad":""} ${c.hidden?"hid":""}" id="r_${c.id}" onclick="select('${c.id}')">
+    <img class="th" loading="lazy" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
+    <div class="au"><b>@${e(c.author)}${lb}</b><span>${c.platform==="YouTube"?"YouTube":"TikTok"} · ${c.duration||"?"} с</span></div>
+    <div>${short(c.views)}</div><div class="c4">${c.outlier?"×"+Math.round(c.outlier):"—"}</div>
+    <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
+    <div class="hook">${e(a.hook_0_3s||c.title||"")}</div></div>`;
 }
-function thumb(c){
-  const id = rawId(c.id);
-  const src = c.platform === "YouTube" ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : `/api/thumb?id=${encodeURIComponent(c.id)}`;
-  const fb = c.platform === "YouTube" ? `this.remove()` : `this.remove()`;
-  return `<img class="th" loading="lazy" alt="" src="${src}" onerror="${fb}">`;
-}
-function authorUrl(c){ return c.platform==="TikTok" ? `https://www.tiktok.com/@${c.author}` : `https://www.youtube.com/channel/${String(c.author_id||"").slice(3)}`; }
-const byId = id => V.find(x=>x.id===id);
-async function setLabel(id, v){ const c=byId(id); const nv = c.label===v ? "" : v; c.label=nv; renderVideos(false); await api("/api/label",{id, v:nv}); }
-async function setNote(id, t){ byId(id).note=t; await api("/api/label",{id, note:t}); toast("Комментарий сохранён"); }
-async function hide(id){ const c=byId(id); c.hidden = c.hidden?0:1; renderVideos(false); await api("/api/hide",{id, hidden:!!c.hidden}); toast(c.hidden?"Скрыто":"Возвращено"); }
 
-// ---------- player + subtitles
-let ytReady = null; const players = {}; let subMode = "ru";
-function loadYT(){ if (ytReady) return ytReady; ytReady = new Promise(res=>{ window.onYouTubeIframeAPIReady=res; const s=document.createElement("script"); s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s);}); return ytReady; }
-async function play(id){
-  const c = byId(id), box = $("p_"+id);
-  if (c.platform === "TikTok") { box.innerHTML = `<iframe src="https://www.tiktok.com/embed/v2/${rawId(id)}" allow="autoplay;fullscreen"></iframe>`; return; }
-  box.innerHTML = `<div id="yt_${id}"></div><select class="subsel" onchange="subMode=this.value"><option value="ru">Субтитры RU</option><option value="orig">Оригинал</option><option value="off">Без субтитров</option></select><div class="sub" id="s_${id}"></div>`;
-  box.querySelector(".subsel").value = subMode;
-  await loadYT();
-  players[id] = new YT.Player("yt_"+id, {videoId: rawId(id), playerVars:{autoplay:1, loop:1, playlist:rawId(id), playsinline:1, rel:0}});
-  const subs = c.subtitles || [];
-  clearInterval(players[id]._t);
-  players[id]._t = setInterval(()=>{
-    const p = players[id]; if (!p || !p.getCurrentTime) return;
-    const t = p.getCurrentTime(), s = subs.find(x => t >= x.start && t < x.end);
-    const el = $("s_"+id); if (!el) return clearInterval(p._t);
-    el.innerHTML = s && subMode!=="off" ? `<span>${e(subMode==="ru"?s.ru:s.orig)}</span>` : "";
-  }, 200);
+let player=null, subMode="ru", tab="an", rate=1;
+function select(id,autoplay=true){
+  selId=id; document.querySelectorAll(".row.sel").forEach(x=>x.classList.remove("sel"));
+  const r=$("r_"+id); if(r){r.classList.add("sel");r.scrollIntoView({block:"nearest"});}
+  renderDet(autoplay);
 }
-function seek(id, t){ const p = players[id]; if (p && p.seekTo) p.seekTo(t, true); else play(id).then(()=>setTimeout(()=>players[id]&&players[id].seekTo&&players[id].seekTo(t,true),1500)); }
+const cur=()=>V.find(x=>x.id===selId);
+function renderDet(autoplay){
+  const c=cur(); if(!c){$("det").innerHTML=`<div class="empty">Выберите ролик в списке</div>`;return;}
+  clearInterval(window._subT); player=null;
+  $("det").innerHTML=`
+   <div class="pl" id="pl">
+     <img alt="" src="${thumbSrc(c)}" onerror="this.remove()">
+     <button class="go" onclick="play()" aria-label="Смотреть"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#0B0D10"/></svg></button>
+   </div>
+   <div class="dbody">
+     <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+       <div><div style="font:700 17px 'Space Grotesk',sans-serif">@${e(c.author)}</div>
+       <div class="muted" style="font-size:13px">${c.platform} · ${n(c.views)} просм. · ${n(c.followers)} подп. · ${e(c.published||"")}</div></div>
+       ${c.nutra_score?`<span class="tag s${c.nutra_score}" style="font-size:14px">${c.nutra_score}/5</span>`:""}
+     </div>
+     <div class="acts">
+       <button class="g ${c.label==="good"?"":"off"}" onclick="setLabel('good')">Нужно · 1</button>
+       <button class="b ${c.label==="bad"?"on":""}" onclick="setLabel('bad')">Мусор · 2</button>
+       <button class="h" onclick="hide()" aria-label="${c.hidden?"Вернуть":"Скрыть"}" title="${c.hidden?"Вернуть":"Скрыть"} · H">
+         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9CED6" stroke-width="2" aria-hidden="true">${c.hidden?'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>':'<path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A10 10 0 0122 12a17 17 0 01-3.2 4.2M6.6 6.6A17 17 0 002 12a10 10 0 0014 6.4"/>'}</svg></button>
+     </div>
+     <div class="tabs">${[["an","Разбор"],["sub","Субтитры"],["ost","Надписи"],["note","Заметка"]].map(([k,t])=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';renderTab()">${t}</button>`).join("")}</div>
+     <div id="tabBody"></div>
+     <div style="font-size:13px"><a href="${e(c.url)}" target="_blank" rel="noopener">Открыть оригинал ↗</a> · <a href="#" onclick="showAuthor(cur().author);return false">все ролики автора</a></div>
+   </div>`;
+  renderTab(); if(autoplay)play(true);
+}
+const STATUS={queued:"ждёт разбора",prefilter:"ждёт фильтра",skip_topic:"отсеян: не по теме",skip_lang:"отсеян: другой язык"};
+function renderTab(){
+  const c=cur(); if(!c)return; const a=A_(c);
+  document.querySelectorAll(".tabs button").forEach((b,i)=>b.classList.toggle("on",["an","sub","ost","note"][i]===tab));
+  let h="";
+  if(tab==="an") h=c.analysis?`<dl>
+     <dt>Хук 0–3 с</dt><dd>${e(a.hook_0_3s)} <span class="muted">(${e(a.hook_type)})</span></dd>
+     <dt>Формат</dt><dd>${e(a.format)}</dd>
+     <dt>Тип</dt><dd>${e((c.content_type||"").replace(/_/g," "))}</dd>
+     <dt>CTA</dt><dd>${e(a.cta)} <span class="muted">(${e(a.cta_mechanic)})</span></dd>
+     <dt>Эмоция</dt><dd>${e(a.emotion)}</dd>
+     <dt>Аудитория</dt><dd>${e(a.target_audience)}</dd>
+     <dt>Продукт</dt><dd>${e(a.product_mentioned)}</dd>
+     <dt>Почему работает</dt><dd>${e(a.why_it_works)}</dd>
+     <dt>Как адаптировать</dt><dd>${e(a.how_to_adapt)}</dd>
+     <dt>Под нутру</dt><dd>${e(a.nutra_reason)}</dd>
+     <dt>Модерация</dt><dd>${e(a.moderation_risk)}</dd>
+     <dt>Ключ</dt><dd class="muted">${e(c.keyword)}</dd></dl>`
+     :`<div class="muted">Разбора нет (${e(STATUS[c.status]||c.status)}).${c.prefilter?"<br>Фильтр: "+e(c.prefilter):""}</div><div class="muted" style="margin-top:8px">${e(c.title)}</div>`;
+  if(tab==="sub") h=(c.subtitles||[]).length?`<ul class="subl">${c.subtitles.map(s=>`<li><button onclick="seek(${+s.start||0})">${e(s.start)}с</button><span>${e(s.ru)}<br><span class="muted">${e(s.orig)}</span></span></li>`).join("")}</ul>`:`<div class="muted">Речи нет или ролик не разобран</div>`;
+  if(tab==="ost") h=(a.on_screen_text||[]).length?`<ul class="subl">${a.on_screen_text.map(s=>`<li><button onclick="seek(${+s.t||0})">${e(s.t)}с</button><span>${e(s.ru)}<br><span class="muted">${e(s.orig)}</span></span></li>`).join("")}</ul>`:`<div class="muted">Надписей нет</div>`;
+  if(tab==="note") h=`<textarea id="noteTa" rows="4" placeholder="Например: взять хук для ролика №3">${e(c.note||"")}</textarea><button class="btn" style="margin-top:8px" onclick="saveNote()">Сохранить заметку</button>`;
+  $("tabBody").innerHTML=h;
+}
+let ytReady=null;
+function loadYT(){if(ytReady)return ytReady;ytReady=new Promise(res=>{window.onYouTubeIframeAPIReady=res;const s=document.createElement("script");s.src="https://www.youtube.com/iframe_api";document.head.appendChild(s);});return ytReady;}
+function setSub(m){subMode=m;document.querySelectorAll(".pctl .sm").forEach(b=>b.classList.toggle("on",b.dataset.m===m));}
+async function play(muted){
+  const c=cur(); if(!c)return; const box=$("pl");
+  if(c.platform==="TikTok"){box.innerHTML=`<iframe src="https://www.tiktok.com/embed/v2/${raw(c.id)}" allow="autoplay;fullscreen"></iframe>`;return;}
+  box.innerHTML=`<div class="yt" id="ytp"></div><div class="pctl">
+     ${[["ru","RU"],["orig","EN"],["off","Без"]].map(([k,t])=>`<button class="sm ${subMode===k?"on":""}" data-m="${k}" onclick="setSub('${k}')">${t}</button>`).join("")}
+     <button onclick="setRate()" id="rateB">${rate}×</button></div><div class="sub" id="sub"></div>`;
+  await loadYT(); const id=selId; if(cur()!==c)return;
+  player=new YT.Player("ytp",{videoId:raw(id),playerVars:{autoplay:1,mute:muted?1:0,loop:1,playlist:raw(id),playsinline:1,rel:0,modestbranding:1},
+    events:{onReady:ev=>{ev.target.setPlaybackRate(rate);if(muted)ev.target.mute();ev.target.playVideo();}}});
+  const subs=c.subtitles||[];
+  clearInterval(window._subT);
+  window._subT=setInterval(()=>{if(selId!==id||!player||!player.getCurrentTime)return;const t=player.getCurrentTime(),s=subs.find(x=>t>=x.start&&t<x.end);const el=$("sub");if(el)el.innerHTML=s&&subMode!=="off"?`<span>${e(subMode==="ru"?s.ru:s.orig)}</span>`:"";},200);
+}
+function setRate(){rate=rate===1?.5:rate===.5?.25:1;if(player&&player.setPlaybackRate)player.setPlaybackRate(rate);const b=$("rateB");if(b)b.textContent=rate+"×";}
+function seek(t){if(player&&player.seekTo){player.seekTo(t,true);player.unMute&&player.unMute();}else play().then(()=>setTimeout(()=>player&&player.seekTo&&player.seekTo(t,true),1500));}
+async function setLabel(v){const c=cur();if(!c)return;c.label=c.label===v?"":v;refreshCard(c);await api("/api/label",{id:c.id,v:c.label});toast(c.label?(c.label==="good"?"Нужно":"Мусор"):"Разметка снята");}
+async function hide(){const c=cur();if(!c)return;c.hidden=c.hidden?0:1;refreshCard(c);await api("/api/hide",{id:c.id,hidden:!!c.hidden});toast(c.hidden?"Скрыто":"Возвращено");}
+function refreshCard(c){updRow(c);renderQueues();
+  const acts=document.querySelector(".acts"); if(acts){acts.querySelector(".g").classList.toggle("off",c.label!=="good");acts.querySelector(".b").classList.toggle("on",c.label==="bad");}
+  $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;}
+async function saveNote(){const c=cur();c.note=$("noteTa").value;await api("/api/label",{id:c.id,note:c.note});toast("Заметка сохранена");}
+function updRow(c){const r=$("r_"+c.id);if(r){const d=document.createElement("div");d.innerHTML=row(c);r.replaceWith(d.firstElementChild);}}
+function showAuthor(h){$("q").value=h;$("fs").value="";F.queue="all";renderQueues();renderList();}
 
-// ---------- authors
-async function loadAuthors(){ if (!A.length) A = (await api("/api/authors")).authors || []; renderAuthors(); }
+document.addEventListener("keydown",ev=>{
+  if(!$("v_videos").classList.contains("on"))return;
+  if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;
+  const i=LIST.findIndex(x=>x.id===selId);
+  if(ev.key==="ArrowDown"||ev.key==="j"){ev.preventDefault();const nx=LIST[Math.min(LIST.length-1,i+1)];if(nx)select(nx.id);}
+  else if(ev.key==="ArrowUp"||ev.key==="k"){ev.preventDefault();const nx=LIST[Math.max(0,i-1)];if(nx)select(nx.id);}
+  else if(ev.key==="1")setLabel("good"); else if(ev.key==="2")setLabel("bad");
+  else if(ev.key==="h"||ev.key==="H"||ev.key==="р"||ev.key==="Р")hide();
+  else if(ev.key===" "){ev.preventDefault();if(player&&player.getPlayerState){player.getPlayerState()===1?player.pauseVideo():(player.unMute(),player.playVideo());}else play();}
+});
+
+async function loadAuthors(){if(!A.length)A=(await api("/api/authors")).authors||[];renderAuthors();}
 function renderAuthors(){
-  const q=$("aq").value.toLowerCase(), ap=$("ap").value, rel=$("arel").value==="1";
-  const r = A.filter(a => (!q || (a.handle||"").toLowerCase().includes(q)) && (!ap||a.platform===ap) && (!rel || (a.relevant_shots||0) > 0));
-  $("atable").innerHTML = `<tr><th>Страница</th><th>Площадка</th><th>Подписчики</th><th>Выстрелов</th><th>По теме</th><th>Макс. просмотры</th><th>Лучший балл</th><th>Тип контента</th><th>Язык</th><th>Вертикали</th><th></th></tr>` +
-    r.map(a=>`<tr><td><a href="${e(a.url)}" target="_blank"><b>@${e(a.handle)}</b></a></td><td>${e(a.platform)}</td><td>${n(a.followers)}</td><td>${a.shots||0}</td>
-      <td><b>${a.relevant_shots||0}</b></td><td>${n(a.max_views)}</td><td>${a.best_score||"—"}</td><td>${e(a.main_type||"")}</td><td>${e(a.lang||"")}</td><td>${e(a.verticals||"")}</td>
-      <td><button onclick="showAuthor('${e(a.handle)}')">Ролики</button></td></tr>`).join("");
+  const q=$("aq").value.toLowerCase(),ap=$("ap").value,rel=$("arel").value==="1";
+  const r=A.filter(a=>(!q||(a.handle||"").toLowerCase().includes(q))&&(!ap||a.platform===ap)&&(!rel||(a.relevant_shots||0)>0));
+  $("atable").innerHTML=`<tr><th>Страница</th><th>Площадка</th><th>Подписчики</th><th>Выстрелов</th><th>По теме</th><th>Макс. просмотры</th><th>Лучший балл</th><th>Тип</th><th>Язык</th><th></th></tr>`+
+   r.map((a,i)=>`<tr><td><a href="${e(a.url)}" target="_blank" rel="noopener"><b>@${e(a.handle)}</b></a></td><td>${e(a.platform)}</td><td>${n(a.followers)}</td><td>${a.shots||0}</td><td><b style="color:var(--acc)">${a.relevant_shots||0}</b></td><td>${n(a.max_views)}</td><td>${a.best_score?`<span class="tag s${a.best_score}">${a.best_score}/5</span>`:"—"}</td><td>${e((a.main_type||"").replace(/_/g," "))}</td><td>${e(a.lang||"")}</td><td><button class="btn" onclick="toAuthor(${i})">Ролики</button></td></tr>`).join("");
+  window._alist=r;
 }
-function showAuthor(h){ $("q").value=h; $("fs").value=""; document.querySelector('.tab[data-v="videos"]').click(); renderVideos(); }
+function toAuthor(i){const h=window._alist[i].handle;document.querySelector('.nav button[data-v="videos"]').click();showAuthor(h);}
 
-// ---------- settings
-async function loadSettings(){ SET = (await api("/api/settings")).settings; renderSettings(); }
+async function loadSettings(){SET=(await api("/api/settings")).settings;renderSettings();}
+const BOOL=[["search_youtube","Искать новые Shorts (YouTube)","бесплатно"],["search_tiktok","Искать новые TikTok","тратит Apify"],["analyze_tiktok","Разбирать TikTok","скачивание видео тратит Apify"]];
 function renderSettings(){
-  if (!SET) { $("setbox").innerHTML = `<div class="panel">Настройки появятся после первого сбора (их создаст сборщик из config.yaml).</div>`; return; }
-  const s = SET.settings || {};
-  const b = (k,label,hint="") => `<div class="fld"><label>${label}<div class="muted" style="font-size:12px">${hint}</div></label><label><input type="checkbox" id="b_${k}" ${s[k]!==false?"checked":""}> вкл</label></div>`;
-  const g = (k,label,hint="") => `<div class="fld"><label>${label}<div class="muted" style="font-size:12px">${hint}</div></label><input id="g_${k}" value="${e(Array.isArray(s[k])?s[k].join(", "):s[k])}"></div>`;
-  let h = `<div class="panel"><h3>Общие</h3>
-    ${g("min_views","Порог просмотров","например 1000000")}
-    ${g("months_back","Свежесть, месяцев")}
-    ${g("max_duration_sec","Макс. длительность, сек")}
-    ${g("langs","Языки","через запятую: en, es")}
-    ${g("yt_region","Регион YouTube","US, GB, ...")}
-    ${g("tt_region","Регион TikTok")}
-    ${g("tt_results_per_keyword","TikTok: роликов на ключ")}
-    ${g("max_analyze_per_run","Разборов за запуск","главный регулятор расходов")}
-    ${g("digest_top","Роликов в Telegram-дайджесте")}
-    ${b("search_youtube","Искать новые Shorts (YouTube)","бесплатно")}
-    ${b("search_tiktok","Искать новые TikTok","тратит Apify")}
-    ${b("analyze_tiktok","Разбирать TikTok","скачивание видео тратит Apify")}</div>`;
-  for (const [k, v] of Object.entries(SET.verticals || {})) {
-    h += `<div class="panel" data-vk="${e(k)}"><h3>Вертикаль: <input class="vname" value="${e(v.name||k)}"> <span class="muted">(${e(k)})</span>
-      <button style="float:right" onclick="delVertical('${e(k)}')">Удалить</button></h3>
-      <div class="muted">Ключевые слова — по одному в строке</div>
-      <textarea class="vkw" rows="10">${e((v.keywords||[]).join("\n"))}</textarea>
-      <details><summary>Шкала «подходит под нутру» (для ИИ)</summary><textarea class="vscale" rows="6">${e(v.nutra_scale||"")}</textarea></details></div>`;
+  if(!SET){$("setbox").innerHTML=`<div class="panel">Настройки появятся после первого сбора.</div>`;return;}
+  const s=SET.settings||{};
+  const g=(k,l,h="")=>`<div class="fld"><label for="g_${k}">${l}<small>${h}</small></label><input id="g_${k}" value="${e(Array.isArray(s[k])?s[k].join(", "):s[k])}"></div>`;
+  let h=`<div class="panel"><h3>Общие</h3>${g("min_views","Порог просмотров","например 1000000")}${g("months_back","Свежесть, месяцев")}${g("max_duration_sec","Макс. длительность, сек")}${g("langs","Языки","через запятую: en, es")}${g("yt_region","Регион YouTube")}${g("tt_region","Регион TikTok")}${g("tt_results_per_keyword","TikTok: роликов на ключ","10–15 экономит Apify")}${g("max_analyze_per_run","Разборов за запуск","главный регулятор расходов")}${g("digest_top","Роликов в Telegram-дайджесте")}
+   ${BOOL.map(([k,l,hh])=>`<div class="fld"><span>${l}<small>${hh}</small></span><label class="ck"><input type="checkbox" id="b_${k}" ${s[k]!==false?"checked":""}> включено</label></div>`).join("")}</div>`;
+  for(const [k,v] of Object.entries(SET.verticals||{})){
+    h+=`<div class="panel" data-vk="${e(k)}"><h3 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Вертикаль <input class="vname" value="${e(v.name||k)}" aria-label="Название"> <span class="muted" style="font:400 13px Inter">${e(k)}</span>
+      <button class="btn" style="margin-left:auto" onclick="delVertical(this.closest('[data-vk]').dataset.vk)">Удалить</button></h3>
+      <label class="muted" style="display:block;margin-bottom:6px">Ключевые слова — по одному в строке</label><textarea class="vkw" rows="10">${e((v.keywords||[]).join("\n"))}</textarea>
+      <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Шкала «подходит под нутру» (для ИИ)</summary><textarea class="vscale" rows="6" style="margin-top:8px">${e(v.nutra_scale||"")}</textarea></details></div>`;
   }
-  h += `<div class="panel"><button onclick="addVertical()">+ Добавить вертикаль</button> <button class="primary" onclick="saveSettings()">💾 Сохранить настройки</button></div>`;
-  $("setbox").innerHTML = h;
+  h+=`<div class="panel" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="addVertical()">+ Вертикаль</button><button class="btn pri" onclick="saveSettings()">Сохранить настройки</button></div>`;
+  $("setbox").innerHTML=h;
 }
 function collectSettings(){
-  const s = {...(SET.settings||{})};
-  for (const k of Object.keys(s)) { const el=$("g_"+k); if (!el) continue;
-    s[k] = k==="langs" ? el.value.split(",").map(x=>x.trim()).filter(Boolean) : (isNaN(+el.value) || el.value.trim()==="" ? el.value.trim() : +el.value); }
-  for (const k of ["search_youtube","search_tiktok","analyze_tiktok"]) { const el=$("b_"+k); if (el) s[k]=el.checked; }
-  const verticals = {};
-  document.querySelectorAll("[data-vk]").forEach(p => { const k=p.dataset.vk;
-    verticals[k] = {...(SET.verticals[k]||{}), name:p.querySelector(".vname").value.trim(),
-      keywords:p.querySelector(".vkw").value.split("\n").map(x=>x.trim()).filter(Boolean), nutra_scale:p.querySelector(".vscale").value}; });
-  return {settings:s, verticals};
+  const s={...(SET.settings||{})};
+  for(const k of Object.keys(s)){const el=$("g_"+k);if(!el)continue;s[k]=k==="langs"?el.value.split(",").map(x=>x.trim()).filter(Boolean):(el.value.trim()===""||isNaN(+el.value)?el.value.trim():+el.value);}
+  for(const [k] of BOOL){const el=$("b_"+k);if(el)s[k]=el.checked;}
+  const verticals={};
+  document.querySelectorAll("[data-vk]").forEach(p=>{const k=p.dataset.vk;verticals[k]={...(SET.verticals[k]||{}),name:p.querySelector(".vname").value.trim(),keywords:p.querySelector(".vkw").value.split("\n").map(x=>x.trim()).filter(Boolean),nutra_scale:p.querySelector(".vscale").value};});
+  return {settings:s,verticals};
 }
-async function saveSettings(){ SET = collectSettings(); await api("/api/settings", SET); toast("Сохранено — применится при следующем сборе"); renderSettings(); }
-function addVertical(){ const k = prompt("Код вертикали латиницей (например weight_loss):"); if (!k) return; SET = collectSettings();
-  SET.verticals[k] = {name:k, keywords:[], nutra_scale:"5 = идеально подходит ...\n1 = не подходит"}; renderSettings(); }
-function delVertical(k){ if (!confirmDel(k)) return; SET = collectSettings(); delete SET.verticals[k]; renderSettings(); toast("Удалено — нажмите «Сохранить»"); }
-function confirmDel(k){ return window.prompt(`Чтобы удалить вертикаль, введите её код: ${k}`) === k; }
+async function saveSettings(){SET=collectSettings();await api("/api/settings",SET);toast("Сохранено");renderSettings();}
+function addVertical(){const k=prompt("Код вертикали латиницей, например weight_loss");if(!k||!/^[a-z0-9_]+$/i.test(k))return;SET=collectSettings();SET.verticals[k]={name:k,keywords:[],nutra_scale:"5 = идеально подходит …\n1 = не подходит"};renderSettings();}
+function delVertical(k){if(prompt(`Чтобы удалить, введите код: ${k}`)!==k)return;SET=collectSettings();delete SET.verticals[k];renderSettings();toast("Удалено — нажмите «Сохранить»");}
 
-// ---------- runs
-async function loadRuns(){
-  const r = (await api("/api/runs")).runs || [];
-  $("runs").innerHTML = r.length ? r.map(x=>`<div class="panel"><b>${e(x.ts)}</b> · найдено ${x.found} · новых ${x.new} · разобрано ${x.analyzed} · ~$${(+x.cost_usd||0).toFixed(3)}
-     <details><summary>Лог</summary><pre>${e(x.log)}</pre></details></div>`).join("") : `<div class="panel muted">Запусков ещё не было</div>`;
-}
-async function runNow(){ $("runmsg").textContent="Запускаю…"; const r = await api("/api/run", {});
-  $("runmsg").textContent = r.ok ? "Запущено. Результаты появятся через 5–15 минут — обновите страницу." : ("Ошибка: " + (r.error||"")); }
+async function loadRuns(){const r=(await api("/api/runs")).runs||[];$("runs").innerHTML=r.length?r.map(x=>`<div class="panel"><b>${e(x.ts)}</b> <span class="muted">· найдено ${x.found} · новых ${x.new} · разобрано ${x.analyzed} · Gemini ~$${(+x.cost_usd||0).toFixed(3)}</span><details style="margin-top:8px"><summary class="muted" style="cursor:pointer">Лог</summary><pre>${e(x.log)}</pre></details></div>`).join(""):`<div class="panel muted">Запусков ещё не было</div>`;}
+async function runNow(mode){$("runmsg").textContent="Запускаю…";const r=await api("/api/run",{mode});$("runmsg").textContent=r.ok?"Запущено. Результаты через 5–30 минут — обновите страницу.":"Ошибка: "+(r.error||"");}
 
-// ---------- start
-["fv","fp","fs","fl","fh","fsc","so"].forEach(i=>$(i).onchange=()=>renderVideos()); $("q").oninput=()=>renderVideos();
 async function start(){
-  try { const d = await api("/api/videos"); V = d.videos || []; } catch(err) { return; }
-  $("app").style.display="block";
-  const verts = [...new Set(V.map(x=>x.vertical).filter(Boolean))];
-  $("fv").innerHTML = `<option value="">Все вертикали</option>` + verts.map(v=>`<option>${e(v)}</option>`).join("");
-  renderVideos();
+  try{V=(await api("/api/videos")).videos||[];}catch(err){return;}
+  $("app").style.display="block"; buildSide(); renderList();
+  if(LIST[0])select(LIST[0].id,false);
 }
 start();
 </script>

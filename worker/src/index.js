@@ -117,10 +117,12 @@ async function api(req, env, url) {
 
   if (p === "/api/run" && req.method === "POST") {
     if (!env.GH_TOKEN || !env.GH_REPO) return json({ ok: false, error: "Не настроен GH_TOKEN / GH_REPO" }, 400);
+    const opts = await req.json().catch(() => ({}));
+    const mode = opts.mode === "full" ? "full" : "analyze";
     const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/workflows/radar.yml/dispatches`, {
       method: "POST",
       headers: { authorization: `Bearer ${env.GH_TOKEN}`, accept: "application/vnd.github+json", "user-agent": "radar-worker" },
-      body: JSON.stringify({ ref: env.GH_BRANCH || "main" }),
+      body: JSON.stringify({ ref: env.GH_BRANCH || "main", inputs: { mode, max_analyze: String(opts.max_analyze || "") } }),
     });
     if (r.status === 204) return json({ ok: true });
     return json({ ok: false, error: `GitHub ответил ${r.status}: ${(await r.text()).slice(0, 200)}` }, 400);
