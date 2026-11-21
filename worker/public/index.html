@@ -73,7 +73,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .acts .b{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent;color:var(--bad);font-weight:600}
 .acts .b.on{background:var(--badbg);border-color:var(--bad)}
 .acts .h{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent}
-.ai{display:inline-block;margin-left:5px;padding:0 5px;border-radius:4px;background:#F28C28;color:#0B0D10;font-size:10px;font-weight:700;line-height:15px;vertical-align:1px}
+.ai{font:inherit;color:inherit;font-weight:inherit}
 .aibtn{height:28px;padding:0 9px;border-radius:6px;border:1px solid #3A424D;background:transparent;color:var(--m);font-weight:700}
 .aibtn.on{background:#F28C28;border-color:#F28C28;color:#0B0D10}
 .src{display:flex;gap:6px;flex-wrap:wrap}
@@ -278,7 +278,7 @@ function row(c){
   const lb=c.label==="good"?`<span class="lbl good">нужно</span>`:c.label==="bad"?`<span class="lbl bad">мусор</span>`:"";
   return `<div class="row ${c.id===selId?"sel":""} ${c.label==="bad"?"bad":""} ${c.hidden?"hid":""}" id="r_${c.id}" onclick="select('${c.id}')">
     <img class="th" loading="lazy" referrerpolicy="no-referrer" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
-    <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ">ИИ</span>':""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
+    <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ"> (ИИ)</span>':""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
     <div>${short(c.views)}</div><div class="c4" title="${c.source==="profile"?"просмотры ÷ медиана просмотров автора":"просмотры ÷ подписчики"}">${xOf(c)?"×"+(xOf(c)<10?(+xOf(c)).toFixed(1).replace(".0",""):Math.round(xOf(c))):"—"}${c.source==="profile"?'<span class="muted" style="font-size:11px"> мед</span>':""}</div>
     <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
     <div class="hook">${e(a.hook_0_3s||c.title||"")}</div></div>`;
@@ -301,7 +301,7 @@ function renderDet(autoplay){
    </div>
    <div class="dbody">
      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-       <div><div style="font:700 17px 'Space Grotesk',sans-serif">@${e(c.author)}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ">ИИ</span>':""}</div>
+       <div><div style="font:700 17px 'Space Grotesk',sans-serif">@${e(c.author)}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ"> (ИИ)</span>':""}</div>
        <div class="muted" style="font-size:13px">${c.platform} · ${n(c.views)} просм. · ${n(c.followers)} подп. · ${e(c.published||"")}</div></div>
        <div style="display:flex;gap:8px;align-items:center">${c.nutra_score?`<span class="tag s${c.nutra_score}" style="font-size:14px">${c.nutra_score}/5</span>`:""}
        <button class="star ${isTracked(c)?"on":""}" id="starB" onclick="follow()" title="Следить за автором · F">${isTracked(c)?"★ В профилях":"☆ Следить"}</button></div>
