@@ -26,7 +26,7 @@ settings:
   profile_window: 15          # скользящая медиана: ±N соседних роликов по дате
   profile_young_days: 3       # ролики моложе N дней не участвуют в медиане и пока не выстрелы
   profile_max_analyze: 1000   # предохранитель: максимум разборов за запуск
-  ig_actor: "scrapesmith/instagram-reels-scraper"        # дешёвый сборщик (~$0.45 / 1000)
+  ig_actor: "memo23/instagram-reel-scraper"   # сборщик Instagram (~$0.79 / 1000); официальный apify/instagram-reel-scraper ~$2.3 / 1000
 
 verticals:
   joints:

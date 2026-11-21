@@ -502,13 +502,13 @@ def _ig_item(it, handle=None):
     code = g(it, "shortCode", "shortcode", "code")
     if not code or g(it, "error"):
         return None
-    views = g(it, "videoPlayCount", "playCount", "play_count", "plays", "videoViewCount", "viewCount", "view_count") or 0
+    views = g(it, "videoPlayCount", "playCount", "play_count", "plays", "videoViewCount", "viewCount", "view_count", "views") or 0
     return dict(id="ig_" + code, raw_id=code, platform="Instagram",
         url=g(it, "url") or f"https://www.instagram.com/reel/{code}/",
         author=g(it, "ownerUsername", "authorUsername", "username", "owner.username", "user.username") or handle,
         title=g(it, "caption", "text", "caption.text") or "", published=_ts(g(it, "timestamp", "createdAt", "taken_at", "takenAt")),
         duration=g(it, "videoDuration", "durationSeconds", "video_duration"), lang="", views=int(views),
-        likes=g(it, "likesCount", "likeCount", "like_count"), comments=g(it, "commentsCount", "commentCount", "comment_count"), shares=None,
+        likes=g(it, "likesCount", "likeCount", "like_count", "likes"), comments=g(it, "commentsCount", "commentCount", "comment_count", "comments_count"), shares=None,
         followers=g(it, "ownerFollowersCount", "authorFollowerCount", "followersCount"), video_url=g(it, "videoUrl", "video_url"),
         thumb=g(it, "displayUrl", "thumbnailUrl", "thumbnail_url", "images.0"))
 
@@ -528,7 +528,7 @@ def fetch_instagram(profs, limit, since=None):
         items = import_run_items(imp)
         actors = []
     else:
-        actors = [S.get("ig_actor", "scrapesmith/instagram-reels-scraper")]
+        actors = [S.get("ig_actor", "memo23/instagram-reel-scraper")]
         items = []
     for actor in actors:
         inp = IG_ACTOR_INPUT.get(actor, IG_ACTOR_INPUT["scrapesmith/instagram-reels-scraper"])(handles, int(limit))
