@@ -306,7 +306,8 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
 
 
 DIRECTIONS = [
-    ("joints", "Суставы и спина"), ("potency", "Потенция"), ("prostate", "Простата"), ("sugar", "Сахар в крови"),
+    ("knees", "Колени и суставы"), ("back", "Спина и шея"), ("potency", "Потенция и либидо"),
+    ("testosterone", "Тестостерон и выносливость"), ("prostate", "Простата"), ("sugar", "Сахар в крови"),
     ("weight", "Похудение и метаболизм"), ("heart", "Давление и сердце"), ("brain", "Память и мозг"), ("vision", "Зрение"),
     ("hearing", "Слух и шум в ушах"), ("gut", "ЖКТ и кишечник"), ("liver", "Печень и детокс"), ("sleep", "Сон и стресс"),
     ("women", "Женское здоровье"), ("veins", "Вены и ноги"), ("skin", "Кожа и антиэйдж"), ("hair", "Волосы и ногти"),
@@ -314,8 +315,11 @@ DIRECTIONS = [
     ("general", "Общее / долголетие"), ("other", "Не про здоровье"),
 ]
 DIR_KEYS = {k for k, _ in DIRECTIONS}
+DIR_VERSION = 2  # поднять при изменении справочника — старая разметка переделается
 DIR_LIST = "\n".join(f"{k} — {t}" for k, t in DIRECTIONS)
-DIR_HINTS = ("Подсказки: потенция (эрекция, либидо, тестостерон) и простата (простатит, мочеиспускание у мужчин) — разные; "
+DIR_HINTS = ("Подсказки: колени и суставы (колени, тазобедренные, плечи, кисти, артрит, артроз, хруст) и спина и шея (поясница, грыжа, "
+             "осанка, шея, седалищный нерв) — разные; потенция и либидо (эрекция, желание) и тестостерон и выносливость "
+             "(уровень тестостерона, сила, мышцы, мужская энергия) и простата (простатит, мочеиспускание у мужчин) — три разных; "
              "давление и сердце (гипертония, холестерин, сердце, артерии) и вены и ноги (варикоз, отёки, тяжесть в ногах, нейропатия стоп) — разные; "
              "general — здоровье без конкретной проблемы («5 продуктов после 50», привычки долгожителей); "
              "other — ролик не про здоровье.")
@@ -344,6 +348,8 @@ DIRCLASS = """Отнеси каждый ролик о здоровье к нап
 
 def classify_directions(db, limit=4000):
     """Разметка направлений по уже сохранённому тексту (подпись, разбор, субтитры) — без загрузки видео."""
+    # всё, что размечено по старому справочнику, — заново
+    db.q("UPDATE videos SET direction=NULL, directions=NULL WHERE direction IS NOT NULL AND COALESCE(dir_v, 0) < ?", [DIR_VERSION])
     rows = db.q("SELECT id, title, analysis, subtitles FROM videos WHERE direction IS NULL LIMIT ?", [limit])
     log(f"Направления: к разметке {len(rows)} роликов")
     done = 0
@@ -369,7 +375,7 @@ def classify_directions(db, limit=4000):
                 upd.append((d["id"], main, alls))
         if upd:
             ids = ",".join(lit(u[0]) for u in upd)
-            db.q("UPDATE videos SET direction = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[1])}" for u in upd) +
+            db.q("UPDATE videos SET dir_v = " + str(DIR_VERSION) + ", direction = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[1])}" for u in upd) +
                  " END, directions = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[2])}" for u in upd) +
                  f" END WHERE id IN ({ids})")
             done += len(upd)
@@ -460,7 +466,7 @@ def upsert_video(db, c, status, pre=None, a=None):
               (a.get("language") or "")[:5], c["id"]])
         dm, da = norm_dirs(a.get("direction"), a.get("direction_extra"))
         if dm:
-            db.q("UPDATE videos SET direction=?, directions=? WHERE id=?", [dm, da, c["id"]])
+            db.q("UPDATE videos SET direction=?, directions=?, dir_v=? WHERE id=?", [dm, da, DIR_VERSION, c["id"]])
     elif existing and status:
         db.q("UPDATE videos SET status=COALESCE(status, ?) WHERE id=?", [status, c["id"]])
     if a is None:
@@ -1182,7 +1188,7 @@ def main():
     for alter in ("ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
                   "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER",
                   "ALTER TABLE profiles ADD COLUMN deep INTEGER", "ALTER TABLE videos ADD COLUMN direction TEXT",
-                  "ALTER TABLE videos ADD COLUMN directions TEXT"):
+                  "ALTER TABLE videos ADD COLUMN directions TEXT", "ALTER TABLE videos ADD COLUMN dir_v INTEGER"):
         try:
             db.q(alter)
         except Exception:

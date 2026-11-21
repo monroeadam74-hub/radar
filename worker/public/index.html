@@ -208,7 +208,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 
 <script>
 let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), queue:"all", src:"all", dir:1};
-const DIRS=[["joints","Суставы и спина"],["potency","Потенция"],["prostate","Простата"],["sugar","Сахар в крови"],["weight","Похудение и метаболизм"],["heart","Давление и сердце"],["brain","Память и мозг"],["vision","Зрение"],["hearing","Слух и шум в ушах"],["gut","ЖКТ и кишечник"],["liver","Печень и детокс"],["sleep","Сон и стресс"],["women","Женское здоровье"],["veins","Вены и ноги"],["skin","Кожа и антиэйдж"],["hair","Волосы и ногти"],["energy","Энергия и усталость"],["immunity","Иммунитет и воспаление"],["kidney","Почки и мочевой пузырь"],["general","Общее / долголетие"],["other","Не про здоровье"],["none","Не размечено"]];
+const DIRS=[["knees","Колени и суставы"],["back","Спина и шея"],["potency","Потенция и либидо"],["testosterone","Тестостерон и выносливость"],["prostate","Простата"],["sugar","Сахар в крови"],["weight","Похудение и метаболизм"],["heart","Давление и сердце"],["brain","Память и мозг"],["vision","Зрение"],["hearing","Слух и шум в ушах"],["gut","ЖКТ и кишечник"],["liver","Печень и детокс"],["sleep","Сон и стресс"],["women","Женское здоровье"],["veins","Вены и ноги"],["skin","Кожа и антиэйдж"],["hair","Волосы и ногти"],["energy","Энергия и усталость"],["immunity","Иммунитет и воспаление"],["kidney","Почки и мочевой пузырь"],["general","Общее / долголетие"],["other","Не про здоровье"],["none","Не размечено"]];
 const DIRN=Object.fromEntries(DIRS);
 const dirsOf=c=>c.directions?c.directions.split(","):["none"];
 const $=id=>document.getElementById(id);
