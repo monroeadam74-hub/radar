@@ -313,7 +313,7 @@ function renderDet(autoplay){
          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9CED6" stroke-width="2" aria-hidden="true">${c.hidden?'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>':'<path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A10 10 0 0122 12a17 17 0 01-3.2 4.2M6.6 6.6A17 17 0 002 12a10 10 0 0014 6.4"/>'}</svg></button>
      </div>
      <div id="whyBox"></div>
-     <div class="tabs">${[["an","Разбор"],["sub","Субтитры"],["ost","Надписи"],["note","Заметка"]].map(([k,t])=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';renderTab()">${t}</button>`).join("")}</div>
+     <div class="tabs">${[["an","Разбор"],["txt","Текст"],["sub","Субтитры"],["ost","Надписи"],["note","Заметка"]].map(([k,t])=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';renderTab()">${t}</button>`).join("")}</div>
      <div id="tabBody"></div>
      <div style="font-size:13px"><a href="${e(c.url)}" target="_blank" rel="noopener">Открыть оригинал ↗</a> · <a href="#" onclick="showAuthor(cur().author);return false">все ролики автора</a></div>
    </div>`;
@@ -322,7 +322,7 @@ function renderDet(autoplay){
 const STATUS={profile_rest:"не выстрел профиля (разбираем только ролики ≥ 2× медианы)",queued:"ждёт разбора",prefilter:"ждёт фильтра",skip_topic:"отсеян: не по теме",skip_lang:"отсеян: другой язык"};
 function renderTab(){
   const c=cur(); if(!c)return; const a=A_(c);
-  document.querySelectorAll(".tabs button").forEach((b,i)=>b.classList.toggle("on",["an","sub","ost","note"][i]===tab));
+  document.querySelectorAll(".tabs button").forEach((b,i)=>b.classList.toggle("on",["an","txt","sub","ost","note"][i]===tab));
   let h="";
   if(tab==="an") h=c.analysis?`<dl>
      <dt>Хук 0–3 с</dt><dd>${e(a.hook_0_3s)} <span class="muted">(${e(a.hook_type)})</span></dd>
@@ -338,6 +338,20 @@ function renderTab(){
      <dt>Модерация</dt><dd>${e(a.moderation_risk)}</dd>
      <dt>Ключ</dt><dd class="muted">${e(c.keyword)}</dd></dl>`
      :`<div class="muted">Разбора нет (${e(STATUS[c.status]||c.status)}).${c.prefilter?"<br>Фильтр: "+e(c.prefilter):""}</div><div class="muted" style="margin-top:8px">${e(c.title)}</div>`;
+  if(tab==="txt"){
+    const subs=c.subtitles||[], ost=a.on_screen_text||[];
+    const src=subs.length?subs.map(s=>({t:+s.start||0,e:+s.end||0,ru:s.ru,en:s.orig})):ost.map(s=>({t:+s.t||0,e:+s.t||0,ru:s.ru,en:s.orig}));
+    if(!src.length) h=`<div class="muted">Текста нет: в ролике нет речи и надписей, или ролик не разобран</div>`;
+    else{
+      const para=k=>{let out=[],cur=[];src.forEach((s,i)=>{const t=(s[k]||"").trim();if(!t)return;cur.push(t);
+        const nx=src[i+1];if(!nx||nx.t-s.e>1.2||cur.length>=4){out.push(cur.join(" "));cur=[];}});if(cur.length)out.push(cur.join(" "));return out;};
+      window._txt={ru:para("ru").join("\n\n"),en:para("en").join("\n\n")};
+      const blk=(k,t)=>`<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>${t}</b>
+        <button class="chip" onclick="copyTxt('${k}')">Скопировать</button></div>
+        <div style="font-size:14px;line-height:1.6;color:var(--t)">${window._txt[k].split("\n\n").map(p=>`<p style="margin:0 0 10px">${e(p)}</p>`).join("")}</div></div>`;
+      h=(subs.length?"":`<div class="muted" style="margin-bottom:8px">Речи нет — показаны надписи на экране</div>`)+blk("ru","Русский")+`<div style="height:8px"></div>`+blk("en","Оригинал");
+    }
+  }
   if(tab==="sub") h=(c.subtitles||[]).length?`<ul class="subl">${c.subtitles.map(s=>`<li><button onclick="seek(${+s.start||0})">${e(s.start)}с</button><span>${e(s.ru)}<br><span class="muted">${e(s.orig)}</span></span></li>`).join("")}</ul>`:`<div class="muted">Речи нет или ролик не разобран</div>`;
   if(tab==="ost") h=(a.on_screen_text||[]).length?`<ul class="subl">${a.on_screen_text.map(s=>`<li><button onclick="seek(${+s.t||0})">${e(s.t)}с</button><span>${e(s.ru)}<br><span class="muted">${e(s.orig)}</span></span></li>`).join("")}</ul>`:`<div class="muted">Надписей нет</div>`;
   if(tab==="note") h=`<textarea id="noteTa" rows="4" placeholder="Например: взять хук для ролика №3">${e(c.note||"")}</textarea><button class="btn" style="margin-top:8px" onclick="saveNote()">Сохранить заметку</button>`;
@@ -362,6 +376,7 @@ async function play(muted){
 }
 function setRate(){rate=rate===1?.5:rate===.5?.25:1;if(player&&player.setPlaybackRate)player.setPlaybackRate(rate);const b=$("rateB");if(b)b.textContent=rate+"×";}
 function seek(t){if(player&&player.seekTo){player.seekTo(t,true);player.unMute&&player.unMute();}else play().then(()=>setTimeout(()=>player&&player.seekTo&&player.seekTo(t,true),1500));}
+function copyTxt(k){const t=(window._txt||{})[k]||"";(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast("Текст скопирован"),()=>{const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Текст скопирован");});}
 async function setLabel(v){const c=cur();if(!c)return;c.label=c.label===v?"":v;refreshCard(c);renderWhy(c.label==="bad");await api("/api/label",{id:c.id,v:c.label});toast(c.label?(c.label==="good"?"Нужно":"Мусор — укажите причину"):"Разметка снята");}
 const WHY=["Не про суставы","Не переносится в нутру","Слабый хук","Держится на личности автора","Формат не повторить","Уже продаёт свой товар","Не та аудитория / гео","Риск модерации"];
 function renderWhy(focus){
