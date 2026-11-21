@@ -850,45 +850,43 @@ SNOW_LABEL = """Для каждого Instagram-аккаунта по имени
 
 
 def med_snow():
-    """Снежный ком по «похожим профилям» Instagram. Жёсткий потолок трат — RADAR_BUDGET (по факту из Apify)."""
+    """Снежный ком по «похожим профилям» Instagram: thenetaji (похожие) → Gemini-отбор по имени →
+    официальный сборщик профилей (подписчики, био) → второй круг от новых врачей. Жёсткий потолок — RADAR_BUDGET."""
     budget = float(ENV("RADAR_BUDGET") or 0)
     seed = json.load(open("research/med_snow_seed.json"))
-    known = set(seed["known"]) | set(seed["removed"])
+    known = {u.lower() for u in seed["known"]} | {u.lower() for u in seed["removed"]}
     ac = apify()
-    spent = 0.0
-    profiles = {}          # ник → данные профиля
-    votes = {}             # кандидат → сколько аккаунтов-источников на него указывают
-    names = {}
+    st = {"spent": 0.0}
+    profiles, votes, names, labels = {}, {}, {}, {}
 
-    def take(items, source_ok):
+    def usage(run, est):
+        try:
+            info = ac.run(_f(run, "id")).get()
+            v = _f(info, "usageTotalUsd", "usage_total_usd")
+            st["spent"] += float(v) if v is not None else est
+        except Exception:
+            st["spent"] += est
+
+    def related(seeds, per):
+        est = len(seeds) * per * 0.0025 + 0.03
+        if st["spent"] + est > budget:
+            log(f"  похожие: не хватает бюджета (нужно ~${est:.2f}, осталось ${budget - st['spent']:.2f})"); return 0
+        run = ac.actor("thenetaji/instagram-related-user-scraper").call(
+            run_input={"username": seeds, "maxItem": per, "chainDepth": 0}, max_items=len(seeds) * per)
+        items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        usage(run, est)
+        n = 0
         for it in items:
             u = (it.get("username") or "").lower()
-            if not u:
-                continue
-            profiles[u] = it
-            if not source_ok(it):
-                continue
-            for rp in it.get("relatedProfiles") or []:
-                ru = (rp.get("username") or "").lower()
-                if ru and ru not in known and ru not in profiles:
-                    votes[ru] = votes.get(ru, 0) + 1
-                    names[ru] = rp.get("full_name") or ""
+            if u and u not in known and u not in profiles:
+                votes[u] = votes.get(u, 0) + 1
+                names[u] = it.get("full_name") or ""
+                n += 1
+        log(f"  похожие: {len(seeds)} источников × {per} → {len(items)} записей, новых кандидатов {len(votes)}, потрачено ${st['spent']:.2f}")
+        return n
 
-    # уровень 0: уже оплаченный запуск по 97 врачам — бесплатно
-    base = ac.run(ENV("RADAR_IMPORT_RUN") or "OpNxRgJ73ZKthiUzV").get()
-    items0 = list(ac.dataset(_f(base, "defaultDatasetId", "default_dataset_id")).iterate_items())
-    keep_seed = set(seed["seed"])
-    take(items0, lambda it: (it.get("username") or "").lower() in keep_seed)
-    log(f"Уровень 0: профилей {len(items0)}, похожих кандидатов {len(votes)} "
-        f"(с relatedProfiles: {sum(1 for x in items0 if x.get('relatedProfiles'))})")
-    if not votes:
-        log("Похожих профилей нет в данных — остановка без трат"); return
-
-    level = 0
-    while spent < budget - 0.3 and level < 3:
-        level += 1
+    def pick_and_scrape(reserve):
         cands = [u for u in votes if u not in profiles]
-        # оценка кандидатов по нику/имени — Gemini (текст, копейки)
         score = {}
         for i in range(0, len(cands), 150):
             chunk = cands[i:i + 150]
@@ -897,51 +895,76 @@ def med_snow():
                 data = next((v for v in data.values() if isinstance(v, list)), [])
             for d in data or []:
                 if isinstance(d, dict) and d.get("u"):
-                    score[str(d["u"]).lower()] = int(d.get("s") or 0)
+                    try:
+                        score[str(d["u"]).lower()] = int(d.get("s") or 0)
+                    except Exception:
+                        pass
         pick = [u for u in cands if score.get(u, 0) >= 2]
         pick.sort(key=lambda u: (score.get(u, 0), votes.get(u, 0)), reverse=True)
-        n_max = int((budget - spent - 0.2) / 0.0026)
+        n_max = int((budget - st["spent"] - reserve) / 0.0026)
+        log(f"  отбор по имени: из {len(cands)} подходят {len(pick)}, проверяем {min(len(pick), max(0, n_max))}")
         pick = pick[:max(0, n_max)]
-        log(f"Уровень {level}: кандидатов {len(cands)}, после отбора {len([u for u in cands if score.get(u, 0) >= 2])}, "
-            f"берём {len(pick)} (осталось ${budget - spent:.2f})")
-        if not pick:
-            break
+        got = []
         for i in range(0, len(pick), 500):
             part = pick[i:i + 500]
-            if spent + len(part) * 0.0026 > budget:
+            est = len(part) * 0.0026
+            if st["spent"] + est > budget:
                 break
             run = ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": part}, max_items=len(part))
             items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
-            try:
-                spent += float(ac.run(_f(run, "id")).get().get("usageTotalUsd") or 0)
-            except Exception:
-                spent += len(part) * 0.0026
-            take(items, lambda it: (it.get("followersCount") or 0) >= 100000)
+            usage(run, est)
+            for it in items:
+                u = (it.get("username") or "").lower()
+                if u:
+                    profiles[u] = it; got.append(it)
             for u in part:
                 profiles.setdefault(u, {"username": u, "error": "not_returned"})
-            log(f"  собрано {len(items)}/{len(part)}, потрачено ${spent:.2f}")
+            log(f"  профили: {len(items)}/{len(part)}, потрачено ${st['spent']:.2f}")
+        return got
 
-    # разметка найденных с ≥ 300k подписчиков
-    new = [p for u, p in profiles.items() if u not in known and (p.get("followersCount") or 0) >= 300000]
-    lab = {}
-    for i in range(0, len(new), 40):
-        chunk = new[i:i + 40]
-        items = "\n".join(f'{p["username"]} | {p.get("fullName") or ""} | {p.get("businessCategoryName") or ""} | '
-                          f'{(p.get("biography") or "").replace(chr(10), " ")[:220]}' for p in chunk)
-        data = ask([SNOW_LABEL.format(excl=SNOW_EXCLUDE, items=items)], "разметка")
-        if isinstance(data, dict):
-            data = next((v for v in data.values() if isinstance(v, list)), [])
-        for d in data or []:
-            if isinstance(d, dict) and d.get("u"):
-                lab[str(d["u"]).lower()] = d
+    def label(items):
+        items = [p for p in items if (p.get("followersCount") or 0) >= 300000 and p["username"].lower() not in labels]
+        for i in range(0, len(items), 40):
+            chunk = items[i:i + 40]
+            txt = "\n".join(f'{p["username"]} | {p.get("fullName") or ""} | {p.get("businessCategoryName") or ""} | '
+                            f'{(p.get("biography") or "").replace(chr(10), " ")[:220]}' for p in chunk)
+            data = ask([SNOW_LABEL.format(excl=SNOW_EXCLUDE, items=txt)], "разметка")
+            if isinstance(data, dict):
+                data = next((v for v in data.values() if isinstance(v, list)), [])
+            for d in data or []:
+                if isinstance(d, dict) and d.get("u"):
+                    labels[str(d["u"]).lower()] = d
+
+    def good(u):
+        l, p = labels.get(u, {}), profiles.get(u, {})
+        return l.get("med") and not l.get("excluded") and l.get("lang") in ("EN", "ES", "PT") and (p.get("followersCount") or 0) >= 500000
+
+    # круг 1: похожие у 65 врачей из списка
+    log(f"Бюджет ${budget:.2f}")
+    if budget <= 0:
+        log("Бюджет 0 — ничего не запускаю"); return
+    per1 = max(10, min(40, int((budget * 0.55 - 0.03) / 0.0025 / max(1, len(seed["seed"])))))
+    related(seed["seed"], per1)
+    label(pick_and_scrape(reserve=budget * 0.3))
+    # круг 2: похожие у новых врачей ≥ 500k
+    new_docs = [u for u in labels if good(u)]
+    left = budget - st["spent"]
+    if new_docs and left > 1:
+        per2 = max(10, min(40, int((left * 0.55 - 0.03) / 0.0025 / len(new_docs))))
+        log(f"Круг 2: новых врачей ≥500k {len(new_docs)}, по {per2} похожих")
+        if related(new_docs, per2):
+            label(pick_and_scrape(reserve=0.1))
     out = []
-    for p in new:
-        u = p["username"].lower()
-        out.append({"u": p["username"], "name": p.get("fullName"), "fol": p.get("followersCount"), "ver": p.get("verified"),
-                    "cat": p.get("businessCategoryName"), "url": p.get("externalUrl"), "bio": (p.get("biography") or "")[:220],
-                    "votes": votes.get(u, 0), **{k: lab.get(u, {}).get(k) for k in ("med", "type", "spec", "lang", "country", "excluded")}})
-    log(f"Готово: собрано профилей {len(profiles)}, новых ≥300k {len(out)}, медиков {sum(1 for x in out if x.get('med'))}, "
-        f"потрачено Apify ${spent:.2f}")
+    for u, p in profiles.items():
+        if u in known or (p.get("followersCount") or 0) < 300000:
+            continue
+        l = labels.get(u, {})
+        out.append({"u": p.get("username"), "name": p.get("fullName"), "fol": p.get("followersCount"), "ver": p.get("verified"),
+                    "cat": p.get("businessCategoryName"), "url": p.get("externalUrl"),
+                    "bio": (p.get("biography") or "").replace("\n", " · ")[:220], "votes": votes.get(u, 0),
+                    **{k: l.get(k) for k in ("med", "type", "spec", "lang", "country", "excluded")}})
+    log(f"Готово: проверено профилей {len(profiles)}, новых ≥300k {len(out)}, подходящих медиков ≥500k "
+        f"{sum(1 for x in out if good(x['u'].lower()))}, потрачено Apify ${st['spent']:.2f}")
     print("SNOWJSON_BEGIN")
     for x in out:
         print(json.dumps(x, ensure_ascii=True))
