@@ -41,6 +41,15 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .q:hover{background:var(--s1)}.q.on{background:var(--s1);border-color:var(--s3);color:#fff;font-weight:600}
 .ck{display:flex;gap:8px;align-items:center;padding:3px 0;color:var(--t2)}
 .ck input{accent-color:var(--acc);width:16px;height:16px}
+.dd{position:relative}
+.dd>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--s1);color:var(--t);white-space:nowrap;overflow:hidden}
+.dd>summary::-webkit-details-marker{display:none}
+.dd>summary span{overflow:hidden;text-overflow:ellipsis}
+.dd>summary::after{content:"▾";color:var(--t2);flex:none}
+.dd[open]>summary{border-color:var(--acc)}
+.dd[open]>summary::after{content:"▴"}
+.dd>summary.act span{color:var(--acc);font-weight:600}
+.ddp{position:absolute;left:0;right:0;top:42px;z-index:30;background:var(--s2);border:1px solid var(--s3);border-radius:12px;padding:8px 10px;max-height:360px;overflow:auto;box-shadow:0 12px 32px rgba(0,0,0,.5)}
 .ck .n{margin-left:auto;color:var(--t3,#8b93a1);font-size:12px}
 .ck.zero{opacity:.45}
 .dtag{color:var(--t2)}
@@ -146,15 +155,15 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
       <label class="ck"><input type="checkbox" id="pYT" checked> YouTube Shorts</label>
       <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label>
       <label class="ck"><input type="checkbox" id="pIG" checked> Instagram</label></div>
-    <div><h4>Направление</h4><div id="dirBox"></div></div>
-    <div><h4>Ведущий</h4><div id="hostBox"></div></div>
-    <div><h4>Визуальный приём</h4><div id="visBox"></div></div>
+    <div><h4>Направление</h4><details class="dd"><summary id="dirSum"><span>Все</span></summary><div class="ddp" id="dirBox"></div></details></div>
+    <div><h4>Ведущий</h4><details class="dd"><summary id="hostSum"><span>Все</span></summary><div class="ddp" id="hostBox"></div></details></div>
+    <div><h4>Визуальный приём</h4><details class="dd"><summary id="visSum"><span>Все</span></summary><div class="ddp" id="visBox"></div></details></div>
     <div><h4>Статус</h4><select id="fs" style="width:100%">
       <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
       <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option><option value="profile_rest">Профили: не выстрел</option></select></div>
     <div><h4>Балл под нутру</h4><div class="chips" id="scoreChips"></div></div>
-    <div><h4>Механика CTA</h4><div id="ctaBox"></div></div>
-    <div><h4>Тип контента</h4><div id="typeBox"></div></div>
+    <div><h4>Механика CTA</h4><details class="dd"><summary id="ctaSum"><span>Все</span></summary><div class="ddp" id="ctaBox"></div></details></div>
+    <div><h4>Тип контента</h4><details class="dd"><summary id="typeSum"><span>Все</span></summary><div class="ddp" id="typeBox"></div></details></div>
     <div><h4>Сортировка</h4><select id="so" style="width:100%">
       <option value="score">Балл, потом просмотры</option><option value="views">Просмотры</option><option value="outlier">× (выстрел)</option><option value="pub">Дата публикации</option><option value="new">Дата добавления</option><option value="author">Автор (А–Я)</option></select>
     <div class="chips" style="margin-top:6px"><button class="chip" id="dirB" onclick="F.dir*=-1;limit=150;renderList()">↓ по убыванию</button></div></div>
@@ -259,6 +268,16 @@ function renderAxis(box,list,set,of,noKey,fn){
 }
 function togHost(k){F.hosts.has(k)?F.hosts.delete(k):F.hosts.add(k);limit=150;renderList();}
 function togVis(k){F.vis.has(k)?F.vis.delete(k):F.vis.add(k);limit=150;renderList();}
+function sumSet(id,set,names){
+  const s=$(id); if(!s)return; const v=[...set].map(k=>names?names[k]||k:String(k).replace(/_/g," "));
+  s.classList.toggle("act",v.length>0);
+  s.innerHTML=`<span title="${e(v.join(", "))}">${v.length?e(v.length>2?v.slice(0,2).join(", ")+" +"+(v.length-2):v.join(", ")):"Все"}</span>`;
+}
+function updSums(){sumSet("dirSum",F.dirs,DIRN);sumSet("hostSum",F.hosts,HOSTN);sumSet("visSum",F.vis,VISN);sumSet("ctaSum",F.cta);sumSet("typeSum",F.types);
+  const d=$("dirSum"); if(d&&F.dirMain&&F.dirs.size)d.querySelector("span").textContent+=" · основное";}
+document.addEventListener("click",ev=>{document.querySelectorAll("details.dd[open]").forEach(d=>{if(!d.contains(ev.target))d.open=false;});});
+document.addEventListener("toggle",ev=>{const t=ev.target;if(t.matches&&t.matches("details.dd")&&t.open)document.querySelectorAll("details.dd[open]").forEach(d=>{if(d!==t)d.open=false;});},true);
+document.addEventListener("keydown",ev=>{if(ev.key==="Escape")document.querySelectorAll("details.dd[open]").forEach(d=>d.open=false);});
 function togDir(k){F.dirs.has(k)?F.dirs.delete(k):F.dirs.add(k);limit=150;renderList();}
 function renderQueues(){
   const B=filtered({noQueue:true});
@@ -310,7 +329,7 @@ function renderSrc(){
 function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
 let LIST=[];
 function renderList(){
-  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderAxis("hostBox",HOSTS,F.hosts,hostOf,"noHost","togHost"); renderAxis("visBox",VISS,F.vis,visOf,"noVis","togVis"); renderSrc(); renderHead();
+  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderAxis("hostBox",HOSTS,F.hosts,hostOf,"noHost","togHost"); renderAxis("visBox",VISS,F.vis,visOf,"noVis","togVis"); updSums(); renderSrc(); renderHead();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
