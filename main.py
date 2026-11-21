@@ -73,7 +73,7 @@ SCHEMA = [
     """CREATE TABLE IF NOT EXISTS profiles (
         id TEXT PRIMARY KEY, platform TEXT, handle TEXT, name TEXT, url TEXT, followers INTEGER,
         reels INTEGER, median_views INTEGER, best_x REAL, shots INTEGER, new_last INTEGER,
-        status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1, ai INTEGER)""",
+        status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1, ai INTEGER, deep INTEGER)""",
     "CREATE INDEX IF NOT EXISTS i_snap ON snapshots(video_id)",
     "CREATE INDEX IF NOT EXISTS i_vid_author ON videos(author_id)",
 ]
@@ -498,66 +498,103 @@ def _ts(v):
     return str(v)[:10] if v else None
 
 
-def profile_instagram(p):
-    items = run_actor(S.get("ig_actor", "apify/instagram-reel-scraper"),
-                      {"username": [p["handle"]], "resultsLimit": int(S.get("profile_reels", 30))})
-    out = []
+def _ig_item(it, handle=None):
+    code = g(it, "shortCode", "shortcode", "code")
+    if not code or g(it, "error"):
+        return None
+    views = g(it, "videoPlayCount", "playCount", "play_count", "videoViewCount", "viewCount") or 0
+    return dict(id="ig_" + code, raw_id=code, platform="Instagram",
+        url=g(it, "url") or f"https://www.instagram.com/reel/{code}/", author=g(it, "ownerUsername", "username") or handle,
+        title=g(it, "caption", "text") or "", published=_ts(g(it, "timestamp", "taken_at")),
+        duration=g(it, "videoDuration", "video_duration"), lang="", views=int(views),
+        likes=g(it, "likesCount", "like_count"), comments=g(it, "commentsCount", "comment_count"), shares=None,
+        followers=g(it, "ownerFollowersCount", "followersCount"), video_url=g(it, "videoUrl", "video_url"),
+        thumb=g(it, "displayUrl", "thumbnailUrl", "thumbnail_url", "images.0"))
+
+
+def _norm_handle(s):
+    s = (s or "").strip().lower()
+    m_ = re.search(r"instagram\.com/([a-z0-9._]+)", s)
+    return (m_.group(1) if m_ else s).lstrip("@").strip("/")
+
+
+def fetch_instagram(profs, limit, since=None):
+    """Один запуск Apify на все профили сразу → {handle_lower: [ролики]}.
+    Сначала дешёвый сборщик (ig_actor), при ошибке или пустом ответе — официальный (ig_actor_fallback)."""
+    handles = [p["handle"] for p in profs]
+    actors = [S.get("ig_actor", "scrapesmith/instagram-reels-scraper"), S.get("ig_actor_fallback", "apify/instagram-reel-scraper")]
+    items = []
+    for actor in dict.fromkeys(actors):
+        inp = ({"username": handles, "resultsLimit": int(limit)} if actor.startswith("apify/") else
+               {"usernames": handles, "resultsLimit": int(limit), "skipPinnedPosts": False,
+                **({"onlyPostsNewerThan": since} if since else {})})
+        try:
+            items = run_actor(actor, inp)
+        except Exception as e:
+            log(f"  Instagram: сборщик {actor} упал: {str(e)[:150]}"); items = []
+        ok = [it for it in items if _ig_item(it)]
+        if ok:
+            log(f"  Instagram: сборщик {actor} → {len(ok)} роликов")
+            items = ok; break
+        log(f"  Instagram: сборщик {actor} ничего не вернул, пробую следующий")
+    by = {h.lower(): [] for h in handles}
     for it in items:
-        code = g(it, "shortCode", "shortcode", "code")
-        if not code or g(it, "error"):
-            continue
-        views = g(it, "videoPlayCount", "playCount", "play_count", "videoViewCount", "viewCount") or 0
-        out.append(dict(id="ig_" + code, raw_id=code, platform="Instagram",
-            url=g(it, "url") or f"https://www.instagram.com/reel/{code}/", author=g(it, "ownerUsername", "username") or p["handle"],
-            title=g(it, "caption", "text") or "", published=_ts(g(it, "timestamp", "taken_at")),
-            duration=g(it, "videoDuration", "video_duration"), lang="", views=int(views),
-            likes=g(it, "likesCount", "like_count"), comments=g(it, "commentsCount", "comment_count"), shares=None,
-            followers=g(it, "ownerFollowersCount", "followersCount"), video_url=g(it, "videoUrl", "video_url"),
-            thumb=g(it, "displayUrl", "thumbnailUrl", "thumbnail_url", "images.0")))
-    return out
+        c = _ig_item(it)
+        key = _norm_handle(g(it, "inputUrl", "inputPost", "input", "query"))
+        if key not in by:
+            key = (c["author"] or "").lower()
+        if key in by:
+            by[key].append(c)
+    return by
 
 
-def profile_tiktok(p):
+def fetch_tiktok(profs, limit):
     items = run_actor(CFG.get("tiktok_download_actor", "clockworks/tiktok-scraper"),
-                      {"profiles": [p["handle"]], "resultsPerPage": int(S.get("profile_reels", 30)),
+                      {"profiles": [p["handle"] for p in profs], "resultsPerPage": int(limit),
                        "profileSorting": "latest", "shouldDownloadVideos": False, "shouldDownloadCovers": False})
-    out = []
+    by = {p["handle"].lower(): [] for p in profs}
     for it in items:
         vid = str(g(it, "id") or "")
-        if not vid.isdigit():
+        user = (g(it, "authorMeta.name") or "")
+        if not vid.isdigit() or user.lower() not in by:
             continue
-        user = g(it, "authorMeta.name") or p["handle"]
-        out.append(dict(id="tt_" + vid, raw_id=vid, platform="TikTok", url=g(it, "webVideoUrl") or f"https://www.tiktok.com/@{user}/video/{vid}",
-            author=user, title=g(it, "text") or "", published=_ts(g(it, "createTime", "createTimeISO")),
-            duration=g(it, "videoMeta.duration"), lang="", views=int(g(it, "playCount") or 0), likes=g(it, "diggCount"),
-            comments=g(it, "commentCount"), shares=g(it, "shareCount"), followers=g(it, "authorMeta.fans")))
-    return out
+        by[user.lower()].append(dict(id="tt_" + vid, raw_id=vid, platform="TikTok",
+            url=g(it, "webVideoUrl") or f"https://www.tiktok.com/@{user}/video/{vid}", author=user, title=g(it, "text") or "",
+            published=_ts(g(it, "createTime", "createTimeISO")), duration=g(it, "videoMeta.duration"), lang="",
+            views=int(g(it, "playCount") or 0), likes=g(it, "diggCount"), comments=g(it, "commentCount"),
+            shares=g(it, "shareCount"), followers=g(it, "authorMeta.fans"), thumb=g(it, "videoMeta.coverUrl", "covers.0")))
+    return by
 
 
-def profile_youtube(p):
+def fetch_youtube(p, limit, since):
     key = ENV("YOUTUBE_KEY")
     YT = "https://www.googleapis.com/youtube/v3/"
     h = p["handle"]
-    if h.startswith("UC") and len(h) == 24:
-        q = dict(id=h)
-    else:
-        q = dict(forHandle="@" + h.lstrip("@"))
+    q = dict(id=h) if (h.startswith("UC") and len(h) == 24) else dict(forHandle="@" + h.lstrip("@"))
     r = requests.get(YT + "channels", params=dict(key=key, part="snippet,statistics,contentDetails", **q), timeout=60).json()
     if not r.get("items") and "forHandle" in q:
-        s = requests.get(YT + "search", params=dict(key=key, part="snippet", q=h, type="channel", maxResults=1), timeout=60).json()
-        cid = (s.get("items") or [{}])[0].get("id", {}).get("channelId")
+        s_ = requests.get(YT + "search", params=dict(key=key, part="snippet", q=h, type="channel", maxResults=1), timeout=60).json()
+        cid = (s_.get("items") or [{}])[0].get("id", {}).get("channelId")
         if cid:
             r = requests.get(YT + "channels", params=dict(key=key, part="snippet,statistics,contentDetails", id=cid), timeout=60).json()
     if not r.get("items"):
         return []
     ch = r["items"][0]
+    p["name"] = ch["snippet"]["title"]
     subs = int(ch["statistics"].get("subscriberCount", 0) or 0)
     up = ch["contentDetails"]["relatedPlaylists"]["uploads"]
-    pl = requests.get(YT + "playlistItems", params=dict(key=key, part="contentDetails", playlistId=up, maxResults=50), timeout=60).json()
-    ids = [x["contentDetails"]["videoId"] for x in pl.get("items", [])]
+    ids, tok = [], None
+    while len(ids) < limit:
+        pl = requests.get(YT + "playlistItems", params=dict(key=key, part="contentDetails", playlistId=up, maxResults=50,
+                          **({"pageToken": tok} if tok else {})), timeout=60).json()
+        its = pl.get("items", [])
+        ids += [x["contentDetails"]["videoId"] for x in its if (x["contentDetails"].get("videoPublishedAt") or "9")[:10] >= since]
+        tok = pl.get("nextPageToken")
+        if not tok or not its or (its[-1]["contentDetails"].get("videoPublishedAt") or "9")[:10] < since:
+            break
     out = []
-    if ids:
-        vr = requests.get(YT + "videos", params=dict(key=key, part="snippet,statistics,contentDetails", id=",".join(ids)), timeout=60).json()
+    for i in range(0, len(ids), 50):
+        vr = requests.get(YT + "videos", params=dict(key=key, part="snippet,statistics,contentDetails", id=",".join(ids[i:i + 50])), timeout=60).json()
         for v in vr.get("items", []):
             d = iso_dur(v["contentDetails"]["duration"])
             if d > S["max_duration_sec"]:
@@ -567,10 +604,66 @@ def profile_youtube(p):
                 author=sn["channelTitle"], title=(sn.get("title") or "") + " " + (sn.get("description") or "")[:300],
                 published=sn["publishedAt"][:10], duration=d, lang=(sn.get("defaultAudioLanguage") or "").lower(),
                 views=int(st.get("viewCount", 0) or 0), likes=int(st.get("likeCount", 0) or 0),
-                comments=int(st.get("commentCount", 0) or 0), shares=None, followers=subs))
-    p["name"] = ch["snippet"]["title"]
-    p["channel_id"] = ch["id"]
-    return out[: int(S.get("profile_reels", 30))]
+                comments=int(st.get("commentCount", 0) or 0), shares=None, followers=subs,
+                thumb=f"https://i.ytimg.com/vi/{v['id']}/hqdefault.jpg"))
+    return out[:limit]
+
+
+def lit(v):
+    """Значение для SQL-литерала (пакетная запись в D1 без лимита на 100 параметров)."""
+    if v is None:
+        return "NULL"
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    return "'" + str(v).replace("\x00", "").replace("'", "''") + "'"
+
+
+def bulk_save(db, cands, known):
+    """Новые ролики — пакетный INSERT, известные — пакетное обновление просмотров + снимки."""
+    ts = NOW.isoformat(timespec="seconds")
+    cols = ["id", "platform", "vertical", "url", "author", "author_id", "title", "published", "duration", "lang", "keyword",
+            "views", "likes", "comments", "shares", "followers", "outlier", "status", "first_seen", "updated", "source"]
+    new = [c for c in cands if c["id"] not in known]
+    for i in range(0, len(new), 40):
+        rows = []
+        for c in new[i:i + 40]:
+            f = c.get("followers")
+            vals = [c["id"], c["platform"], c["vertical"], c.get("url"), c.get("author"), c.get("author_id"), (c.get("title") or "")[:500],
+                    c.get("published"), c.get("duration"), c.get("lang"), c.get("keyword"), c["views"], c.get("likes"),
+                    c.get("comments"), c.get("shares"), f, round(c["views"] / f, 1) if f else None, "profile_rest", ts, ts, "profile"]
+            rows.append("(" + ",".join(lit(x) for x in vals) + ")")
+        db.q(f"INSERT OR IGNORE INTO videos ({','.join(cols)}) VALUES " + ",".join(rows))
+    old = [c for c in cands if c["id"] in known]
+    for i in range(0, len(old), 150):
+        ch = old[i:i + 150]
+        case = " ".join(f"WHEN {lit(c['id'])} THEN {int(c['views'])}" for c in ch)
+        db.q(f"UPDATE videos SET views = CASE id {case} END, updated={lit(ts)} WHERE id IN ({','.join(lit(c['id']) for c in ch)})")
+    for i in range(0, len(cands), 150):
+        ch = cands[i:i + 150]
+        db.q("INSERT INTO snapshots VALUES " + ",".join(
+            "(" + ",".join(lit(x) for x in [c["id"], ts, c["views"], c.get("likes"), c.get("comments"), c.get("shares")]) + ")" for c in ch))
+
+
+def rolling_median(rows, window, young_days):
+    """rows: [{id, views, published}] → {id: (median соседей, возраст в днях)}. Соседи — ±window роликов по дате, без «молодых»."""
+    def age(r):
+        try:
+            return (NOW.date() - dt.date.fromisoformat((r.get("published") or "")[:10])).days
+        except Exception:
+            return 999
+    rows = sorted(rows, key=lambda r: ((r.get("published") or "0000"), r["id"]))
+    mature = [i for i, r in enumerate(rows) if age(r) >= young_days]
+    out = {}
+    for i, r in enumerate(rows):
+        neigh = [rows[j]["views"] for j in mature if j != i and abs(j - i) <= window]
+        if len(neigh) < 3:   # мало соседей — берём ближайшие зрелые по порядку
+            neigh = [rows[j]["views"] for j in sorted(mature, key=lambda j: abs(j - i)) if j != i][:2 * window]
+        neigh.sort()
+        med = neigh[len(neigh) // 2] if neigh else None
+        out[r["id"]] = (med, age(r))
+    return out
 
 
 def fetch_bytes(url):
@@ -610,87 +703,179 @@ def seed_profiles(db):
 
 
 def run_profiles(db):
-    """Слежка за профилями: последние ролики → медиана → разбор выстрелов (топ при добавлении, дальше ≥ N× медианы)."""
+    """Профили. Первый раз — глубокий скан (до 500 роликов / 18 мес.), дальше раз в 3 дня — ролики за последний месяц.
+    Выстрел = просмотры ≥ X × скользящая медиана (±15 соседних роликов, без роликов моложе 3 дней) и ≥ порога просмотров."""
+    from concurrent.futures import ThreadPoolExecutor
     seed_profiles(db)
     profs = db.q("SELECT * FROM profiles WHERE COALESCE(active,1)=1 ORDER BY added")
     log(f"Профилей на слежке: {len(profs)}")
-    budget = int(S.get("profile_max_analyze", 60))
-    top_first, x_min = int(S.get("profile_top_first", 5)), float(S.get("profile_outlier_min", 2))
+    deep_n, deep_days = int(S.get("profile_deep_reels", 300)), int(S.get("profile_deep_days", 365))
+    upd_n, upd_days = int(S.get("profile_update_reels", 50)), int(S.get("profile_update_days", 30))
+    x_min, floor = float(S.get("profile_outlier_min", 2)), int(S.get("profile_min_views", 100000))
+    window, young = int(S.get("profile_window", 15)), int(S.get("profile_young_days", 3))
+    budget = int(S.get("profile_max_analyze", 1000))
     hidden = {r["id"] for r in db.q("SELECT id FROM labels WHERE hidden=1")}
     found, new_ids, analyzed, all_c = 0, set(), 0, []
+    deep_since = (NOW - dt.timedelta(days=deep_days)).strftime("%Y-%m-%d")
+    upd_since = (NOW - dt.timedelta(days=upd_days)).strftime("%Y-%m-%d")
+
+    # 1) сбор: Instagram/TikTok — один запуск Apify на группу профилей
+    strong = int(S.get("profile_deep_min_median", 20000))
+    # режим профиля: deep — глубокий скан; sample — первые 50 роликов, чтобы понять, сильный ли профиль; update — обновление
     for p in profs:
-        first = not p.get("last_run")
-        try:
-            fn = {"Instagram": profile_instagram, "TikTok": profile_tiktok, "YouTube": profile_youtube}[p["platform"]]
-            if p["platform"] != "YouTube" and not ENV("APIFY_TOKEN"):
-                log("  нет токена Apify, пропуск", p["id"]); continue
-            cands = fn(p)
-        except Exception as e:
-            log(f"  {p['id']}: ошибка сбора {str(e)[:200]}")
-            db.q("UPDATE profiles SET status=?, last_run=? WHERE id=?", ["ошибка сбора", NOW.isoformat(timespec="seconds"), p["id"]])
-            continue
-        if not cands:
-            log(f"  {p['id']}: роликов нет (профиль удалён, закрыт или пуст)")
-            db.q("UPDATE profiles SET status=?, last_run=? WHERE id=?", ["нет роликов", NOW.isoformat(timespec="seconds"), p["id"]])
-            continue
-        views = sorted(c["views"] for c in cands)
-        med = views[len(views) // 2] or 1
+        if p.get("deep") == 1:
+            p["_mode"] = "update"
+        elif p.get("deep") == 0 or (p.get("median_views") or 0) >= strong:
+            p["_mode"] = "deep"
+        elif p.get("median_views") is not None:
+            p["_mode"] = "update"   # слабый профиль: глубокий скан не нужен
+        else:
+            p["_mode"] = "sample"
+    got = {}
+    for plat, fn in (("Instagram", fetch_instagram), ("TikTok", fetch_tiktok)):
+        for mode in ("deep", "sample", "update"):
+            grp = [p for p in profs if p["platform"] == plat and p["_mode"] == mode]
+            if not grp:
+                continue
+            deep = mode == "deep"
+            if not ENV("APIFY_TOKEN"):
+                log(f"  {plat}: нет токена Apify, пропуск"); continue
+            try:
+                n_, since_ = (deep_n, deep_since) if deep else (upd_n, None if mode == "sample" else upd_since)
+                res = fn(grp, n_, since_) if plat == "Instagram" else fn(grp, n_)
+                log(f"  {plat}: {dict(deep='глубокий скан', sample='первый сбор', update='обновление')[mode]} {len(grp)} профилей → {sum(len(v) for v in res.values())} роликов")
+                for p in grp:
+                    got[p["id"]] = res.get(p["handle"].lower(), [])
+            except Exception as e:
+                log(f"  {plat}: ошибка сбора {str(e)[:200]}")
+    for p in profs:
+        if p["platform"] == "YouTube":
+            try:
+                got[p["id"]] = fetch_youtube(p, deep_n if p["_mode"] == "deep" else upd_n, deep_since if p["_mode"] != "update" else upd_since)
+            except Exception as e:
+                log(f"  {p['id']}: ошибка YouTube {str(e)[:200]}")
+
+    queue = []   # (профиль, ролик) на разбор
+    for p in profs:
+        deep = p["_mode"] in ("deep", "sample")   # в первом сборе тоже разбираем все выстрелы выборки
+        cands = got.get(p["id"])
+        if cands is None:
+            db.q("UPDATE profiles SET status=?, last_run=? WHERE id=?", ["ошибка сбора", NOW.isoformat(timespec="seconds"), p["id"]]); continue
+        since = deep_since if deep else upd_since
+        cands = [c for c in cands if not c.get("published") or c["published"] >= since][: deep_n if p["_mode"] == "deep" else upd_n]
+        # смена ника: все ролики пришли от другого владельца
+        owners = {(c.get("author") or "").lower() for c in cands}
+        if p["platform"] == "Instagram" and len(owners) == 1 and next(iter(owners)) not in ("", p["handle"].lower()):
+            newh = next(iter(owners))
+            log(f"  {p['id']}: ник сменился на @{newh}")
+            db.q("UPDATE profiles SET name=?, handle=?, url=? WHERE id=?", [newh, newh, f"https://www.instagram.com/{newh}/", p["id"]])
+            p["handle"], p["url"] = newh, f"https://www.instagram.com/{newh}/"
+        if not cands and deep:
+            log(f"  {p['id']}: роликов нет (удалён, закрыт или пуст)")
+            db.q("UPDATE profiles SET status=?, last_run=? WHERE id=?", ["нет роликов", NOW.isoformat(timespec="seconds"), p["id"]]); continue
         fol = next((c["followers"] for c in cands if c.get("followers")), None) or p.get("followers")
-        known = {r["id"] for r in db.q("SELECT id FROM videos WHERE id IN (%s)" % ",".join("?" * len(cands)), [c["id"] for c in cands])}
         for c in cands:
-            c.update(vertical="profiles", source="profile", keyword="профиль @" + p["handle"],
-                     author_id=p["id"], author_url=p["url"], vs_median=round(c["views"] / med, 1))
+            c.update(vertical="profiles", source="profile", keyword="профиль @" + p["handle"], author_id=p["id"], author_url=p["url"])
             if fol and not c.get("followers"):
                 c["followers"] = fol
+        known = set()
+        ids = [c["id"] for c in cands]
+        for i in range(0, len(ids), 90):
+            known |= {r["id"] for r in db.q("SELECT id FROM videos WHERE id IN (%s)" % ",".join("?" * len(ids[i:i + 90])), ids[i:i + 90])}
+        bulk_save(db, cands, known)
         fresh = [c for c in cands if c["id"] not in known]
+        new_ids |= {c["id"] for c in fresh}
         found += len(cands)
-        # что разбираем
-        if first:
-            pick = sorted(cands, key=lambda c: c["views"], reverse=True)[:top_first]
-        else:
-            pick = [c for c in fresh if c["vs_median"] >= x_min]
-        pick_ids = {c["id"] for c in pick}
-        for c in cands:
-            if c["id"] in known:
-                upsert_video(db, c, None)
-            else:
-                upsert_video(db, c, "queued" if c["id"] in pick_ids else "profile_rest")
-                new_ids.add(c["id"])
-            if c.get("thumb"):
-                save_thumb(db, c["id"], c["thumb"])
-        pick_ids = {c["id"] for c in pick}
-        pick += [c for c in cands if c["id"] in known and c["id"] not in pick_ids and
-                 (db.q("SELECT status FROM videos WHERE id=?", [c["id"]]) or [{}])[0].get("status") == "queued"]
-        pick = [c for c in pick if c["id"] not in hidden and
-                (db.q("SELECT status FROM videos WHERE id=?", [c["id"]]) or [{}])[0].get("status") != "analyzed"]
-        pick = pick[:max(0, budget - analyzed)]
-        files = {}
-        if p["platform"] == "TikTok" and pick and S.get("analyze_tiktok", True):
-            files = {k: v[0] for k, v in tiktok_download(pick).items()}
-        n_ok = 0
-        for c in pick:
-            vb = None
-            if c["platform"] == "Instagram":
-                vb = fetch_bytes(c.get("video_url")) if c.get("video_url") else None
-                if not vb:
-                    log(f"  {c['id']}: видео не скачалось"); continue
-            elif c["platform"] == "TikTok":
-                vb = files.get(c["raw_id"])
-                if not vb:
-                    continue
-            a = analyze(c, vb)
+        # обложки (временные ссылки → в базу), параллельно
+        todo = [c for c in cands if c.get("thumb")]
+        have = set()
+        for i in range(0, len(todo), 90):
+            ch = [c["id"] for c in todo[i:i + 90]]
+            have |= {r["id"] for r in db.q("SELECT id FROM thumbs WHERE id IN (%s)" % ",".join("?" * len(ch)), ch)}
+        todo = [c for c in todo if c["id"] not in have]
+        with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else 8) as ex:
+            list(ex.map(lambda c: save_thumb(db, c["id"], c["thumb"]), todo))
+        # 2) скользящая медиана по всей истории профиля в базе
+        hist = db.q("SELECT id, views, published, status FROM videos WHERE author_id=? AND source='profile'", [p["id"]])
+        cur_views = {c["id"]: c["views"] for c in cands}
+        for r in hist:
+            r["views"] = cur_views.get(r["id"], r["views"] or 0)
+        med = rolling_median(hist, window, young)
+        x = {}
+        for r in hist:
+            m_, a_ = med.get(r["id"], (None, 0))
+            x[r["id"]] = round(r["views"] / m_, 1) if m_ else None
+        rows = [r for r in hist if x.get(r["id"]) is not None]
+        for i in range(0, len(rows), 150):
+            ch = rows[i:i + 150]
+            case = " ".join(f"WHEN {lit(r['id'])} THEN {x[r['id']]}" for r in ch)
+            db.q(f"UPDATE videos SET vs_median = CASE id {case} END WHERE id IN ({','.join(lit(r['id']) for r in ch)})")
+        # 3) выстрелы: глубокий скан — все за 18 мес.; обновление — новые + поздние за последний месяц
+        byid = {c["id"]: c for c in cands}
+        shots = []
+        for r in hist:
+            m_, a_ = med.get(r["id"], (None, 0))
+            if r["status"] == "analyzed" or r["id"] in hidden or not x.get(r["id"]) or a_ < young:
+                continue
+            if not deep and (r.get("published") or "9") < upd_since:
+                continue
+            if x[r["id"]] >= x_min and r["views"] >= floor:
+                shots.append(r["id"])
+        if shots:
+            db.q(f"UPDATE videos SET status='queued' WHERE id IN ({','.join(lit(i) for i in shots)})")
+        n_shots = sum(1 for r in hist if (x.get(r["id"]) or 0) >= x_min and r["views"] >= floor)
+        allv = sorted(r["views"] for r in hist if r["views"])
+        db.q("""UPDATE profiles SET followers=COALESCE(?, followers), reels=?, median_views=?, best_x=?, shots=?, new_last=?,
+                status=?, last_run=?, deep=? WHERE id=?""",
+             [fol, len(hist), allv[len(allv) // 2] if allv else None, max([v for v in x.values() if v] or [0]), n_shots, len(fresh),
+              f"на разбор {len(shots)}", NOW.isoformat(timespec="seconds"),
+              (0 if (allv and allv[len(allv) // 2] >= strong) else 1) if p["_mode"] == "sample" else 1, p["id"]])
+        log(f"  {p['id']}: {dict(deep='глубокий скан', sample='первый сбор', update='обновление')[p['_mode']]} — роликов {len(cands)}, новых {len(fresh)}, "
+            f"в базе {len(hist)}, выстрелов к разбору {len(shots)}")
+        for sid in shots:
+            c = byid.get(sid)
+            if not c:   # поздний выстрел, которого нет в текущей выдаче
+                row = db.q("SELECT * FROM videos WHERE id=?", [sid])[0]
+                c = dict(row, raw_id=sid[3:])
+            c["vs_median"] = x.get(sid)
+            queue.append((p, c))
+        all_c += cands
+
+    # 4) разбор в 4 потока (запись в базу — в основном потоке)
+    queue = queue[:budget]
+    log(f"На разбор всего: {len(queue)}")
+    tt_files = {}
+    tts = [c for p, c in queue if c["platform"] == "TikTok"]
+    if tts and S.get("analyze_tiktok", True):
+        tt_files = {k: v[0] for k, v in tiktok_download(tts).items()}
+
+    def work(pc):
+        p, c = pc
+        vb = None
+        if c["platform"] == "Instagram":
+            vb = fetch_bytes(c["video_url"]) if c.get("video_url") else None
+            if not vb:
+                return c, None, "видео не скачалось (ссылка устарела — повторим в следующий раз)"
+        elif c["platform"] == "TikTok":
+            vb = tt_files.get(c["raw_id"])
+            if not vb:
+                return c, None, "TikTok не скачался"
+        try:
+            return c, analyze(c, vb), None
+        except Exception as e:
+            return c, None, str(e)[:150]
+
+    per = {}
+    with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else 4) as ex:
+        for c, a, err in ex.map(work, queue):
             if a:
                 upsert_video(db, c, "analyzed", a=a)
-                new_ids.add(c["id"]); analyzed += 1; n_ok += 1
-                log(f"  ✓ {c['platform']} @{c['author']} {c['views']:,} (×{c['vs_median']} к медиане) → {a.get('nutra_score')}/5")
-            time.sleep(2)
-        shots = sum(1 for c in cands if c["vs_median"] >= x_min)
-        db.q("""UPDATE profiles SET name=COALESCE(?, name), followers=COALESCE(?, followers), reels=?, median_views=?, best_x=?,
-                shots=?, new_last=?, status=?, last_run=? WHERE id=?""",
-             [p.get("name"), fol, len(cands), med, max(c["vs_median"] for c in cands), shots, len(fresh),
-              f"ок: разобрано {n_ok}", NOW.isoformat(timespec="seconds"), p["id"]])
-        log(f"  {p['id']}: роликов {len(cands)}, новых {len(fresh)}, медиана {med:,}, на разбор {len(pick)}, разобрано {n_ok}")
-        all_c += cands
+                analyzed += 1; new_ids.add(c["id"]); per[c["author_id"]] = per.get(c["author_id"], 0) + 1
+                log(f"  ✓ {c['platform']} @{c['author']} {c['views']:,} (×{c.get('vs_median')} к медиане) → {a.get('nutra_score')}/5")
+            else:
+                log(f"  ✗ {c['id']}: {err or 'разбор не удался'}")
+    for pid, n in per.items():
+        db.q("UPDATE profiles SET status=? WHERE id=?", [f"ок: разобрано {n}", pid])
     if all_c:
         refresh_authors(db, all_c)
     return dict(found=found, new=len(new_ids), analyzed=analyzed, new_ids=new_ids)
@@ -800,7 +985,8 @@ def main():
     for s in SCHEMA:
         db.q(s)
     for alter in ("ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
-                  "ALTER TABLE videos ADD COLUMN vs_median REAL"):
+                  "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER",
+                  "ALTER TABLE profiles ADD COLUMN deep INTEGER"):
         try:
             db.q(alter)
         except Exception:

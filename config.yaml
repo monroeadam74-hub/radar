@@ -15,12 +15,19 @@ settings:
   search_youtube: true      # искать новые Shorts
   search_tiktok: true       # искать новые TikTok (тратит Apify)
   analyze_tiktok: true      # разбирать TikTok (скачивание видео тратит Apify)
-  # --- профили (слежка за аккаунтами, обновление раз в 3 дня)
-  profile_reels: 30         # сколько последних роликов брать с профиля
-  profile_top_first: 5      # при добавлении профиля разобрать N самых просматриваемых
-  profile_outlier_min: 2    # дальше разбирать новые ролики с просмотрами >= N × медиана автора
-  profile_max_analyze: 60   # максимум разборов за запуск профилей
-  ig_actor: "apify/instagram-reel-scraper"
+  # --- профили (слежка за аккаунтами)
+  profile_deep_reels: 300     # глубокий скан: до N роликов…
+  profile_deep_days: 365      # …или за 12 месяцев (что раньше закончится)
+  profile_deep_min_median: 20000  # глубокий скан только у сильных профилей (медиана просмотров >= N)
+  profile_update_reels: 50    # раз в 3 дня: последние N роликов…
+  profile_update_days: 30     # …но только за последний месяц (новые и поздние выстрелы)
+  profile_outlier_min: 2      # выстрел: просмотры >= N × скользящая медиана
+  profile_min_views: 100000   # и не меньше N просмотров
+  profile_window: 15          # скользящая медиана: ±N соседних роликов по дате
+  profile_young_days: 3       # ролики моложе N дней не участвуют в медиане и пока не выстрелы
+  profile_max_analyze: 1000   # предохранитель: максимум разборов за запуск
+  ig_actor: "scrapesmith/instagram-reels-scraper"        # дешёвый сборщик (~$0.45 / 1000)
+  ig_actor_fallback: "apify/instagram-reel-scraper"     # запасной, официальный (~$2.4 / 1000)
 
 verticals:
   joints:
