@@ -1419,6 +1419,17 @@ def main():
                              ensure_ascii=True))
         print("FMT_END")
         return
+    if ENV("RADAR_MODE") == "reltest":
+        ac = apify()
+        run = ac.actor("thenetaji/instagram-related-user-scraper").call(
+            run_input={"username": ["drpimplepopper", "doctorabellan"], "maxItem": 10, "chainDepth": 0}, max_items=20)
+        items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        info = ac.run(_f(run, "id")).get()
+        log(f"reltest: элементов {len(items)}, статус {info.get('status')}, стоимость ${info.get('usageTotalUsd')}, "
+            f"плата {json.dumps(info.get('chargedEventCounts') or {}, ensure_ascii=False)} {json.dumps(info.get('pricingInfo') or {}, ensure_ascii=False)[:300]}")
+        for it in items[:25]:
+            log("  ", json.dumps({k: it.get(k) for k in ("username", "full_name", "is_verified", "discovered_from", "depth")}, ensure_ascii=False))
+        return
     if ENV("RADAR_MODE") == "medsnow":
         med_snow()
         return
