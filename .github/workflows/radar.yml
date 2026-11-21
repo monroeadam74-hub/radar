@@ -1,15 +1,17 @@
 name: radar
 
 on:
-  # По расписанию обновляются только профили (раз в 3 дня, 04:23 UTC = 07:23 МСК).
-  # Поиск по ключам — только вручную (кнопки на сайте).
-  schedule:
-    - cron: "23 4 */3 * *"
+  # Расписание выключено. Чтобы включить обновление профилей раз в 3 дня — уберите # у двух строк ниже.
+  # schedule:
+  #   - cron: "23 4 */3 * *"
   workflow_dispatch:         # кнопка «Run workflow» для ручного запуска
     inputs:
       mode:
         description: "full — поиск + разбор; analyze — только разобрать найденное; profiles — обновить профили; thumbs — обложки TikTok"
         default: "full"
+      import_run:
+        description: "Профили: взять данные уже оплаченного запуска Apify (ID или last) вместо нового сбора"
+        default: ""
       max_analyze:
         description: "Сколько роликов разобрать за запуск (пусто = из настроек)"
         default: ""
@@ -35,6 +37,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RADAR_MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'profiles') || 'full' }}
           RADAR_MAX_ANALYZE: ${{ inputs.max_analyze }}
+          RADAR_IMPORT_RUN: ${{ inputs.import_run }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

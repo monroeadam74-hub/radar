@@ -27,7 +27,6 @@ settings:
   profile_young_days: 3       # ролики моложе N дней не участвуют в медиане и пока не выстрелы
   profile_max_analyze: 1000   # предохранитель: максимум разборов за запуск
   ig_actor: "scrapesmith/instagram-reels-scraper"        # дешёвый сборщик (~$0.45 / 1000)
-  ig_actor_fallback: "apify/instagram-reel-scraper"     # запасной, официальный (~$2.4 / 1000)
 
 verticals:
   joints:

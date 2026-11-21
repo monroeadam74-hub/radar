@@ -520,11 +520,16 @@ def _norm_handle(s):
 
 def fetch_instagram(profs, limit, since=None):
     """Один запуск Apify на все профили сразу → {handle_lower: [ролики]}.
-    Сначала дешёвый сборщик (ig_actor), при ошибке или пустом ответе — официальный (ig_actor_fallback)."""
+    Только сборщик из настроек (ig_actor). Автоматического перехода на дорогой сборщик нет."""
     handles = [p["handle"] for p in profs]
-    actors = [S.get("ig_actor", "scrapesmith/instagram-reels-scraper"), S.get("ig_actor_fallback", "apify/instagram-reel-scraper")]
-    items = []
-    for actor in dict.fromkeys(actors):
+    imp = ENV("RADAR_IMPORT_RUN")
+    if imp:   # повторно использовать уже оплаченный запуск Apify (чтение данных бесплатно)
+        items = import_run_items(imp)
+        actors = []
+    else:
+        actors = [S.get("ig_actor", "scrapesmith/instagram-reels-scraper")]
+        items = []
+    for actor in actors:
         inp = ({"username": handles, "resultsLimit": int(limit)} if actor.startswith("apify/") else
                {"usernames": handles, "resultsLimit": int(limit), "skipPinnedPosts": False,
                 **({"onlyPostsNewerThan": since} if since else {})})
@@ -536,7 +541,7 @@ def fetch_instagram(profs, limit, since=None):
         if ok:
             log(f"  Instagram: сборщик {actor} → {len(ok)} роликов")
             items = ok; break
-        log(f"  Instagram: сборщик {actor} ничего не вернул, пробую следующий")
+        log(f"  Instagram: сборщик {actor} ничего не вернул — сбор пропущен (дорогой сборщик автоматически не включается)")
     by = {h.lower(): [] for h in handles}
     for it in items:
         c = _ig_item(it)
@@ -546,6 +551,45 @@ def fetch_instagram(profs, limit, since=None):
         if key in by:
             by[key].append(c)
     return by
+
+
+def import_run_items(run_id):
+    """Данные уже оплаченного запуска Apify. run_id='last' — последний успешный запуск официального сборщика с >= 100 роликами."""
+    ac = apify()
+    if run_id == "last":
+        runs = ac.actor("apify/instagram-reel-scraper").runs().list(desc=True, limit=20).items
+        run_id = next((r["id"] for r in runs if r.get("status") == "SUCCEEDED" and
+                       (ac.dataset(r["defaultDatasetId"]).get() or {}).get("itemCount", 0) >= 100), None)
+        if not run_id:
+            log("  Импорт: подходящий запуск не найден"); return []
+    run = ac.run(run_id).get()
+    items = list(ac.dataset(run["defaultDatasetId"]).iterate_items())
+    log(f"  Импорт: запуск {run_id} от {run.get('startedAt')} → {len(items)} строк (повторная оплата сбора не нужна)")
+    return items
+
+
+def ig_test():
+    """Проверка дешёвого сборщика: 1 профиль, 5 роликов (~$0.01) + хвост журнала Apify."""
+    ac = apify()
+    actor = S.get("ig_actor", "scrapesmith/instagram-reels-scraper")
+    for inp in ({"usernames": ["farmtruths"], "resultsLimit": 5},):
+        log(f"Тест {actor} вход {inp}")
+        run = ac.actor(actor).call(run_input=inp)
+        items = list(ac.dataset(run["defaultDatasetId"]).iterate_items())
+        log(f"  статус {run.get('status')} · строк {len(items)} · распознано роликов {sum(1 for it in items if _ig_item(it))}")
+        if items:
+            log("  поля первой строки:", sorted(items[0].keys())[:60])
+            log("  пример:", {k: items[0].get(k) for k in ("shortCode", "videoPlayCount", "ownerUsername", "inputUrl", "timestamp", "error", "errorDescription")})
+        try:
+            log("  журнал Apify (хвост):\n" + (ac.run(run["id"]).log().get() or "")[-2500:])
+        except Exception as e:
+            log("  журнал недоступен:", e)
+    for r in ac.actor(actor).runs().list(desc=True, limit=5).items:
+        log(f"  прошлый запуск {r['id']} {r.get('status')} {r.get('startedAt')}")
+        try:
+            log("    хвост журнала:\n" + (ac.run(r["id"]).log().get() or "")[-1500:])
+        except Exception:
+            pass
 
 
 def fetch_tiktok(profs, limit):
@@ -738,6 +782,8 @@ def run_profiles(db):
             if not grp:
                 continue
             deep = mode == "deep"
+            if ENV("RADAR_IMPORT_RUN") and (plat != "Instagram" or mode != "deep"):
+                continue
             if not ENV("APIFY_TOKEN"):
                 log(f"  {plat}: нет токена Apify, пропуск"); continue
             try:
@@ -995,6 +1041,12 @@ def main():
     if ENV("RADAR_MODE") == "thumbs":
         tiktok_thumbs(db)
         db_size(db)
+        return
+    if ENV("RADAR_MODE") == "igtest":
+        n = db.q("SELECT COUNT(*) n FROM videos WHERE source='profile'")[0]["n"]
+        log(f"В базе роликов из профилей: {n}")
+        log("Профили:", [(p["id"], p.get("reels"), p.get("deep"), p.get("status")) for p in db.q("SELECT * FROM profiles")])
+        ig_test()
         return
     if ENV("RADAR_MODE") == "profiles":
         stats = run_profiles(db)
