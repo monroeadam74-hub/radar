@@ -73,7 +73,7 @@ SCHEMA = [
     """CREATE TABLE IF NOT EXISTS profiles (
         id TEXT PRIMARY KEY, platform TEXT, handle TEXT, name TEXT, url TEXT, followers INTEGER,
         reels INTEGER, median_views INTEGER, best_x REAL, shots INTEGER, new_last INTEGER,
-        status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1)""",
+        status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1, ai INTEGER)""",
     "CREATE INDEX IF NOT EXISTS i_snap ON snapshots(video_id)",
     "CREATE INDEX IF NOT EXISTS i_vid_author ON videos(author_id)",
 ]

@@ -29,9 +29,17 @@ async function ensure(env) {
   if (ensured) return;
   for (const s of SCHEMA) await env.DB.prepare(s).run();
   for (const a of ["ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
-                   "ALTER TABLE videos ADD COLUMN vs_median REAL"]) {
+                   "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER"]) {
     try { await env.DB.prepare(a).run(); } catch {}
   }
+  // стартовые профили — ИИ-персонажи (метка ставится один раз, дальше переключается во вкладке «Профили»)
+  try {
+    if (!(await env.DB.prepare("SELECT v FROM kv WHERE k='ai_seeded'").first())) {
+      await env.DB.prepare(`UPDATE profiles SET ai=1 WHERE id IN ('ig:farmtruths','ig:mingsanhealing','ig:vega.naturalmed','ig:amish.house1',
+        'ig:nonnasofiahealth','ig:shantivaidya.ayurveda','ig:wellnesswithjacob1','ig:mayalin_wellness','ig:grandmatruth','ig:herbalance_lab')`).run();
+      await env.DB.prepare("INSERT OR REPLACE INTO kv VALUES ('ai_seeded','1')").run();
+    }
+  } catch {}
   ensured = true;
 }
 
@@ -59,8 +67,8 @@ async function api(req, env, url) {
       const r = await env.DB.prepare(
         `SELECT v.id, v.platform, v.vertical, v.url, v.author, v.author_id, v.title, v.published, v.duration, v.lang, v.keyword,
                 v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score,
-                v.content_type, v.analysis, v.subtitles, v.first_seen, v.source, v.vs_median, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
-         FROM videos v LEFT JOIN labels l ON l.id = v.id ORDER BY v.views DESC LIMIT 3000`).all();
+                v.content_type, v.analysis, v.subtitles, v.first_seen, v.source, v.vs_median, COALESCE(pr.ai, 0) AS ai, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
+         FROM videos v LEFT JOIN labels l ON l.id = v.id LEFT JOIN profiles pr ON pr.id = v.author_id ORDER BY v.views DESC LIMIT 3000`).all();
       rows = r.results || [];
     } catch (e) { return json({ videos: [], note: "Таблица videos ещё не создана — запустите сбор" }); }
     for (const x of rows) { x.analysis = parse(x.analysis, null); x.subtitles = parse(x.subtitles, []); }
@@ -188,6 +196,12 @@ async function api(req, env, url) {
     await env.DB.prepare("INSERT INTO profiles (id, platform, handle, name, url, added, active, status) VALUES (?,?,?,?,?,?,1,?)")
       .bind(pid, platform, handle, b.name || null, purl, new Date().toISOString().slice(0, 19), "ждёт первого сбора").run();
     return json({ ok: true, id: pid });
+  }
+
+  if (p === "/api/profiles/ai" && req.method === "POST") {
+    const { id, ai } = await req.json().catch(() => ({}));
+    await env.DB.prepare("UPDATE profiles SET ai=? WHERE id=?").bind(ai ? 1 : 0, id).run();
+    return json({ ok: true });
   }
 
   if (p === "/api/profiles/delete" && req.method === "POST") {

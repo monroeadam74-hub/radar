@@ -73,6 +73,9 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .acts .b{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent;color:var(--bad);font-weight:600}
 .acts .b.on{background:var(--badbg);border-color:var(--bad)}
 .acts .h{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent}
+.ai{display:inline-block;margin-left:5px;padding:0 5px;border-radius:4px;background:#F28C28;color:#0B0D10;font-size:10px;font-weight:700;line-height:15px;vertical-align:1px}
+.aibtn{height:28px;padding:0 9px;border-radius:6px;border:1px solid #3A424D;background:transparent;color:var(--m);font-weight:700}
+.aibtn.on{background:#F28C28;border-color:#F28C28;color:#0B0D10}
 .src{display:flex;gap:6px;flex-wrap:wrap}
 .star{height:34px;padding:0 12px;border-radius:999px;border:1px solid #3A424D;background:transparent;color:var(--t2);white-space:nowrap}
 .star.on{border-color:var(--mid);color:var(--mid);background:#2A2410}
@@ -275,7 +278,7 @@ function row(c){
   const lb=c.label==="good"?`<span class="lbl good">нужно</span>`:c.label==="bad"?`<span class="lbl bad">мусор</span>`:"";
   return `<div class="row ${c.id===selId?"sel":""} ${c.label==="bad"?"bad":""} ${c.hidden?"hid":""}" id="r_${c.id}" onclick="select('${c.id}')">
     <img class="th" loading="lazy" referrerpolicy="no-referrer" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
-    <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
+    <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ">ИИ</span>':""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
     <div>${short(c.views)}</div><div class="c4" title="${c.source==="profile"?"просмотры ÷ медиана просмотров автора":"просмотры ÷ подписчики"}">${xOf(c)?"×"+(xOf(c)<10?(+xOf(c)).toFixed(1).replace(".0",""):Math.round(xOf(c))):"—"}${c.source==="profile"?'<span class="muted" style="font-size:11px"> мед</span>':""}</div>
     <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
     <div class="hook">${e(a.hook_0_3s||c.title||"")}</div></div>`;
@@ -298,7 +301,7 @@ function renderDet(autoplay){
    </div>
    <div class="dbody">
      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-       <div><div style="font:700 17px 'Space Grotesk',sans-serif">@${e(c.author)}</div>
+       <div><div style="font:700 17px 'Space Grotesk',sans-serif">@${e(c.author)}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ">ИИ</span>':""}</div>
        <div class="muted" style="font-size:13px">${c.platform} · ${n(c.views)} просм. · ${n(c.followers)} подп. · ${e(c.published||"")}</div></div>
        <div style="display:flex;gap:8px;align-items:center">${c.nutra_score?`<span class="tag s${c.nutra_score}" style="font-size:14px">${c.nutra_score}/5</span>`:""}
        <button class="star ${isTracked(c)?"on":""}" id="starB" onclick="follow()" title="Следить за автором · F">${isTracked(c)?"★ В профилях":"☆ Следить"}</button></div>
@@ -411,12 +414,14 @@ function ago(t){if(!t)return"—";const d=(Date.now()-Date.parse(t+(t.endsWith("
 function renderProfiles(){
   const el=$("ptable");if(!el)return;
   if(!P.length){el.innerHTML=`<tr><td class="muted">Профилей пока нет — вставьте ссылку выше или нажмите ☆ Следить у любого ролика.</td></tr>`;return;}
-  el.innerHTML=`<tr><th>Профиль</th><th>Площадка</th><th>Подписчики</th><th>Роликов</th><th>Медиана просм.</th><th>Лучший ×</th><th>Выстрелов</th><th>Новых</th><th>Обновлён</th><th>Статус</th><th></th></tr>`+
+  el.innerHTML=`<tr><th>Профиль</th><th>Площадка</th><th>Подписчики</th><th>Роликов</th><th>Медиана просм.</th><th>Лучший ×</th><th>Выстрелов</th><th>Новых</th><th>Обновлён</th><th>Статус</th><th title="Персонаж сгенерирован ИИ">ИИ</th><th></th></tr>`+
    P.map((p,i)=>`<tr><td><a href="${e(p.url)}" target="_blank" rel="noopener"><b>@${e(p.handle)}</b></a>${p.name&&p.name!==p.handle?`<br><span class="muted" style="font-size:12px">${e(p.name)}</span>`:""}</td>
    <td>${e(p.platform)}</td><td>${n(p.followers)}</td><td>${p.reels??"—"}</td><td>${n(p.median_views)}</td><td>${p.best_x?"×"+(+p.best_x).toFixed(1):"—"}</td>
-   <td><b style="color:var(--acc)">${p.shots??"—"}</b></td><td>${p.new_last??"—"}</td><td>${ago(p.last_run)}</td><td class="muted">${e(p.status||"")}</td>
+   <td><b style="color:var(--acc)">${p.shots??"—"}</b></td><td>${p.new_last??"—"}</td><td>${ago(p.last_run)}</td><td class="muted">${e(p.status||"")}</td><td><button class="aibtn ${p.ai?"on":""}" title="Отметить, что персонаж сгенерирован ИИ" onclick="toggleAI(${i})">ИИ</button></td>
    <td style="white-space:nowrap"><button class="btn" onclick="toProfile(${i})">Ролики</button> <button class="btn" id="del_${i}" onclick="delProfile(${i},this)">Удалить</button></td></tr>`).join("");
 }
+async function toggleAI(i){const p=P[i];p.ai=p.ai?0:1;await api("/api/profiles/ai",{id:p.id,ai:p.ai});
+  V.forEach(c=>{if(c.author_id===p.id)c.ai=p.ai;});renderProfiles();toast(p.ai?"Помечен как ИИ":"Метка ИИ снята");}
 async function addProfile(){
   const v=$("padd").value.trim();if(!v)return;$("pmsg").textContent="Добавляю…";
   const r=await api("/api/profiles",{input:v});
