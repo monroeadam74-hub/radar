@@ -553,18 +553,31 @@ def fetch_instagram(profs, limit, since=None):
     return by
 
 
+def _f(o, *keys):
+    """Поле объекта Apify (новые версии клиента отдают объекты, старые — словари)."""
+    for k in keys:
+        v = o.get(k) if isinstance(o, dict) else getattr(o, k, None)
+        if v is not None:
+            return v
+    return None
+
+
 def import_run_items(run_id):
     """Данные уже оплаченного запуска Apify. run_id='last' — последний успешный запуск официального сборщика с >= 100 роликами."""
     ac = apify()
     if run_id == "last":
-        runs = ac.actor("apify/instagram-reel-scraper").runs().list(desc=True, limit=20).items
-        run_id = next((r["id"] for r in runs if r.get("status") == "SUCCEEDED" and
-                       (ac.dataset(r["defaultDatasetId"]).get() or {}).get("itemCount", 0) >= 100), None)
+        runs = _f(ac.actor("apify/instagram-reel-scraper").runs().list(desc=True, limit=20), "items") or []
+        run_id = None
+        for r in runs:
+            if str(_f(r, "status")).endswith("SUCCEEDED"):
+                ds = ac.dataset(_f(r, "defaultDatasetId", "default_dataset_id")).get()
+                if (_f(ds, "itemCount", "item_count") or 0) >= 100:
+                    run_id = _f(r, "id"); break
         if not run_id:
             log("  Импорт: подходящий запуск не найден"); return []
     run = ac.run(run_id).get()
-    items = list(ac.dataset(run["defaultDatasetId"]).iterate_items())
-    log(f"  Импорт: запуск {run_id} от {run.get('startedAt')} → {len(items)} строк (повторная оплата сбора не нужна)")
+    items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+    log(f"  Импорт: запуск {run_id} от {_f(run, 'startedAt', 'started_at')} → {len(items)} строк (повторная оплата сбора не нужна)")
     return items
 
 
@@ -575,19 +588,19 @@ def ig_test():
     for inp in ({"usernames": ["farmtruths"], "resultsLimit": 5},):
         log(f"Тест {actor} вход {inp}")
         run = ac.actor(actor).call(run_input=inp)
-        items = list(ac.dataset(run["defaultDatasetId"]).iterate_items())
-        log(f"  статус {run.get('status')} · строк {len(items)} · распознано роликов {sum(1 for it in items if _ig_item(it))}")
+        items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        log(f"  статус {_f(run, 'status')} · строк {len(items)} · распознано роликов {sum(1 for it in items if _ig_item(it))}")
         if items:
             log("  поля первой строки:", sorted(items[0].keys())[:60])
             log("  пример:", {k: items[0].get(k) for k in ("shortCode", "videoPlayCount", "ownerUsername", "inputUrl", "timestamp", "error", "errorDescription")})
         try:
-            log("  журнал Apify (хвост):\n" + (ac.run(run["id"]).log().get() or "")[-2500:])
+            log("  журнал Apify (хвост):\n" + (ac.run(_f(run, "id")).log().get() or "")[-2500:])
         except Exception as e:
             log("  журнал недоступен:", e)
-    for r in ac.actor(actor).runs().list(desc=True, limit=5).items:
-        log(f"  прошлый запуск {r['id']} {r.get('status')} {r.get('startedAt')}")
+    for r in _f(ac.actor(actor).runs().list(desc=True, limit=5), "items") or []:
+        log(f"  прошлый запуск {_f(r, 'id')} {_f(r, 'status')} {_f(r, 'startedAt', 'started_at')}")
         try:
-            log("    хвост журнала:\n" + (ac.run(r["id"]).log().get() or "")[-1500:])
+            log("    хвост журнала:\n" + (ac.run(_f(r, "id")).log().get() or "")[-1500:])
         except Exception:
             pass
 
