@@ -290,6 +290,8 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
  "target_audience": "возраст, пол, проблема",
  "direction": "одно основное направление по симптоматике — ключ из справочника ниже",
  "direction_extra": ["0–2 дополнительных ключа, только если ролик реально про них"],
+ "host": "кто в кадре — один ключ из справочника ведущих ниже",
+ "visuals": ["1–2 ключа визуального приёма из справочника ниже, первый — главный"],
  "nutra_score": число 1-5 по шкале:
 {scale}
  "nutra_reason": "почему такой балл, 1 предложение",
@@ -302,6 +304,8 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
 Справочник направлений (ключ — название):
 {dirs}
 {hints}
+{vis}
+{vhints}
 Субтитры: каждая фраза 1–4 сек, не длиннее ~12 слов, таймкоды по моменту речи, все end ≤ {dur}. Речи нет — пустой список."""
 
 
@@ -323,6 +327,77 @@ DIR_HINTS = ("Подсказки: колени и суставы (колени, 
              "давление и сердце (гипертония, холестерин, сердце, артерии) и вены и ноги (варикоз, отёки, тяжесть в ногах, нейропатия стоп) — разные; "
              "general — здоровье без конкретной проблемы («5 продуктов после 50», привычки долгожителей); "
              "other — ролик не про здоровье.")
+
+
+HOSTS = [("doctor", "Врач / эксперт"), ("sage", "Мудрец-архетип"), ("elder", "Бабушка / дед / фермер"),
+         ("person", "Обычный человек / UGC"), ("none", "Без ведущего")]
+VISUALS = [("talking", "Говорящая голова"), ("pointer", "«Указка на тело»"), ("shock", "Шок-крупный план"),
+           ("anatomy", "3D-анатомия"), ("beforeafter", "До / после на экране"), ("prop", "Предмет в руке + вопрос"),
+           ("experiment", "Наглядный опыт"), ("recipe", "Рецепт / приготовление"), ("exercise", "Упражнение"),
+           ("clinic", "Клиника / процедура"), ("rating", "Рейтинг / обзор"), ("product", "Товар / распаковка / ASMR"),
+           ("humor", "Юмор / скетч / POV"), ("slides", "Слайды / текст на фоне")]
+HOST_KEYS, VIS_KEYS = {k for k, _ in HOSTS}, {k for k, _ in VISUALS}
+VIS_VERSION = 1
+VIS_LIST = ("Ведущий (кто в кадре), один ключ:\n" + "\n".join(f"{k} — {t}" for k, t in HOSTS) +
+            "\nВизуальный приём, 1–2 ключа (первый — главный):\n" + "\n".join(f"{k} — {t}" for k, t in VISUALS))
+VIS_HINTS = ("Подсказки: doctor — врач, медик, эксперт в халате/кабинете или представленный как специалист; sage — монах, шаман, "
+             "целитель, гуру; elder — пожилой человек из народа: бабушка, дед, фермер, огород, деревенская кухня; person — обычный "
+             "человек, отзыв, личная история; none — в кадре нет ведущего (голос за кадром, текст, анимация). "
+             "pointer — ведущий показывает на часть тела другого человека/модели и называет проблему («это — забитая печень»); "
+             "shock — отталкивающий крупный план (паразиты, гной, гнилые зубы, отёки); prop — ведущий держит предмет (лимон, арбуз, "
+             "лёд, модель) и задаёт вопрос/интригу; experiment — наглядный опыт с предметами; talking — ведущий просто говорит в камеру "
+             "без особого приёма.")
+
+
+def norm_vis(host, vis):
+    h = str(host or "").strip().lower()
+    h = h if h in HOST_KEYS else None
+    vs = [str(x).strip().lower() for x in (vis if isinstance(vis, list) else [vis]) if isinstance(x, str)]
+    vs = list(dict.fromkeys(x for x in vs if x in VIS_KEYS))[:2]
+    return h, (vs[0] if vs else None), (",".join(vs) if vs else None)
+
+
+VISCLASS = """По описанию разобранного ролика определи, кто в кадре и какой визуальный приём используется.
+{vis}
+{hints}
+Верни JSON-список: [{{"id": "...", "host": "ключ", "visuals": ["ключ", "ключ"]}}]
+Ролики:
+{items}"""
+
+
+def classify_visuals(db, limit=4000):
+    """Ведущий + визуальный приём для уже разобранных роликов — по тексту разбора, без загрузки видео."""
+    db.q("UPDATE videos SET host=NULL, visual=NULL, visuals=NULL WHERE visual IS NOT NULL AND COALESCE(vis_v, 0) < ?", [VIS_VERSION])
+    rows = db.q("SELECT id, title, analysis FROM videos WHERE status='analyzed' AND host IS NULL LIMIT ?", [limit])
+    log(f"Ведущий/визуал: к разметке {len(rows)} роликов")
+    done = 0
+    for i in range(0, len(rows), 25):
+        chunk = rows[i:i + 25]
+        items = []
+        for r in chunk:
+            a = json.loads(r["analysis"] or "{}")
+            ost = " / ".join(str(x.get("ru") or x.get("orig") or "") for x in (a.get("on_screen_text") or [])[:4] if isinstance(x, dict))
+            txt = " | ".join(f"{k}: {v}" for k, v in [("хук", a.get("hook_0_3s")), ("формат", a.get("format")),
+                             ("тип хука", a.get("hook_type")), ("надписи", ost[:200]), ("почему работает", a.get("why_it_works")),
+                             ("подпись", (r.get("title") or "")[:150])] if v and v != "нет")
+            items.append(f'{r["id"]}: {txt!r}')
+        data = ask([VISCLASS.format(vis=VIS_LIST, hints=VIS_HINTS, items="\n".join(items))], "визуал")
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        upd = []
+        for d in data or []:
+            if isinstance(d, dict) and d.get("id"):
+                h, v1, vs = norm_vis(d.get("host"), d.get("visuals"))
+                if h or v1:
+                    upd.append((d["id"], h, v1, vs))
+        if upd:
+            ids = ",".join(lit(u[0]) for u in upd)
+            case = lambda j: " ".join(f"WHEN {lit(u[0])} THEN {lit(u[j])}" for u in upd)
+            db.q(f"UPDATE videos SET vis_v = {VIS_VERSION}, host = CASE id {case(1)} END, visual = CASE id {case(2)} END, "
+                 f"visuals = CASE id {case(3)} END WHERE id IN ({ids})")
+            done += len(upd)
+        log(f"  размечено {done}/{len(rows)}")
+    return done
 
 
 def norm_dirs(main, extra=None):
@@ -425,7 +500,7 @@ def analyze(c, video_bytes=None):
     from google.genai import types
     v = CFG["verticals"].get(c["vertical"]) or PROFILE_VERTICAL
     prompt = ANALYSIS.format(vname=v.get("name", c["vertical"]), scale=v.get("nutra_scale", ""), dur=c.get("duration") or 60,
-                           dirs=DIR_LIST, hints=DIR_HINTS)
+                           dirs=DIR_LIST, hints=DIR_HINTS, vis=VIS_LIST, vhints=VIS_HINTS)
     if c["platform"] == "YouTube":
         part = types.Part(file_data=types.FileData(file_uri=f"https://www.youtube.com/watch?v={c['raw_id']}"))
     else:
@@ -467,6 +542,9 @@ def upsert_video(db, c, status, pre=None, a=None):
         dm, da = norm_dirs(a.get("direction"), a.get("direction_extra"))
         if dm:
             db.q("UPDATE videos SET direction=?, directions=?, dir_v=? WHERE id=?", [dm, da, DIR_VERSION, c["id"]])
+        vh, v1, vs = norm_vis(a.get("host"), a.get("visuals"))
+        if vh or v1:
+            db.q("UPDATE videos SET host=?, visual=?, visuals=?, vis_v=? WHERE id=?", [vh, v1, vs, VIS_VERSION, c["id"]])
     elif existing and status:
         db.q("UPDATE videos SET status=COALESCE(status, ?) WHERE id=?", [status, c["id"]])
     if a is None:
@@ -1188,7 +1266,9 @@ def main():
     for alter in ("ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
                   "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER",
                   "ALTER TABLE profiles ADD COLUMN deep INTEGER", "ALTER TABLE videos ADD COLUMN direction TEXT",
-                  "ALTER TABLE videos ADD COLUMN directions TEXT", "ALTER TABLE videos ADD COLUMN dir_v INTEGER"):
+                  "ALTER TABLE videos ADD COLUMN directions TEXT", "ALTER TABLE videos ADD COLUMN dir_v INTEGER",
+                  "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN visual TEXT",
+                  "ALTER TABLE videos ADD COLUMN visuals TEXT", "ALTER TABLE videos ADD COLUMN vis_v INTEGER"):
         try:
             db.q(alter)
         except Exception:
@@ -1197,6 +1277,10 @@ def main():
     if ENV("RADAR_MODE") == "thumbs":
         tiktok_thumbs(db)
         db_size(db)
+        return
+    if ENV("RADAR_MODE") == "visuals":
+        n = classify_visuals(db)
+        log(f"Готово: размечено {n}, Gemini ~${GEM['tin'] / 1e6 * 0.1 + GEM['tout'] / 1e6 * 0.4:.3f} (оценка)")
         return
     if ENV("RADAR_MODE") == "directions":
         n = classify_directions(db)
@@ -1229,8 +1313,9 @@ def main():
             log("Обложки TikTok: ошибка", str(e)[:200])
         try:
             classify_directions(db)
+            classify_visuals(db)
         except Exception as e:
-            log("Направления: ошибка", str(e)[:200])
+            log("Направления/визуал: ошибка", str(e)[:200])
         cost = GEM["tin"] / 1e6 * 0.25 + GEM["tout"] / 1e6 * 1.5
         stats["cost"] = cost
         db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), stats["found"], stats["new"],
@@ -1320,8 +1405,9 @@ def main():
         log("Обложки TikTok: ошибка", str(e)[:200])
     try:
         classify_directions(db)
+        classify_visuals(db)
     except Exception as e:
-        log("Направления: ошибка", str(e)[:200])
+        log("Направления/визуал: ошибка", str(e)[:200])
     cost = GEM["tin"] / 1e6 * 0.25 + GEM["tout"] / 1e6 * 1.5
     stats = dict(found=found, new=len(new_ids), analyzed=analyzed, cost=cost)
     db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), found, len(new_ids), analyzed, cost, "\n".join(LOG)[-20000:]])

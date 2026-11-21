@@ -147,6 +147,8 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
       <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label>
       <label class="ck"><input type="checkbox" id="pIG" checked> Instagram</label></div>
     <div><h4>Направление</h4><div id="dirBox"></div></div>
+    <div><h4>Ведущий</h4><div id="hostBox"></div></div>
+    <div><h4>Визуальный приём</h4><div id="visBox"></div></div>
     <div><h4>Статус</h4><select id="fs" style="width:100%">
       <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
       <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option><option value="profile_rest">Профили: не выстрел</option></select></div>
@@ -207,7 +209,11 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
-let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, queue:"all", src:"all", dir:1};
+let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, hosts:new Set(), vis:new Set(), queue:"all", src:"all", dir:1};
+const HOSTS=[["doctor","Врач / эксперт"],["sage","Мудрец-архетип"],["elder","Бабушка / дед / фермер"],["person","Обычный человек / UGC"],["none","Без ведущего"],["unk","Не размечено"]];
+const VISS=[["talking","Говорящая голова"],["pointer","«Указка на тело»"],["shock","Шок-крупный план"],["anatomy","3D-анатомия"],["beforeafter","До / после на экране"],["prop","Предмет в руке + вопрос"],["experiment","Наглядный опыт"],["recipe","Рецепт / приготовление"],["exercise","Упражнение"],["clinic","Клиника / процедура"],["rating","Рейтинг / обзор"],["product","Товар / распаковка / ASMR"],["humor","Юмор / скетч / POV"],["slides","Слайды / текст на фоне"],["unk","Не размечено"]];
+const HOSTN=Object.fromEntries(HOSTS),VISN=Object.fromEntries(VISS);
+const hostOf=c=>[c.host||"unk"],visOf=c=>c.visuals?c.visuals.split(","):["unk"];
 const DIRS=[["knees","Колени и суставы"],["back","Спина и шея"],["potency","Потенция и либидо"],["testosterone","Тестостерон и выносливость"],["prostate","Простата"],["sugar","Сахар в крови"],["weight","Похудение и метаболизм"],["heart","Давление и сердце"],["brain","Память и мозг"],["vision","Зрение"],["hearing","Слух и шум в ушах"],["gut","ЖКТ и кишечник"],["liver","Печень и детокс"],["sleep","Сон и стресс"],["women","Женское здоровье"],["veins","Вены и ноги"],["skin","Кожа и антиэйдж"],["hair","Волосы и ногти"],["energy","Энергия и усталость"],["immunity","Иммунитет и воспаление"],["kidney","Почки и мочевой пузырь"],["general","Общее / долголетие"],["other","Не про здоровье"],["none","Не размечено"]];
 const DIRN=Object.fromEntries(DIRS);
 const dirsOf=c=>c.directions?(F.dirMain?[c.direction]:c.directions.split(",")):["none"];
@@ -246,6 +252,13 @@ function renderDirs(){
   $("dirBox").innerHTML=`<div class="chips" style="margin-bottom:6px">${[[false,"Все"],[true,"Только основное"]].map(([v,t])=>`<button class="chip ${F.dirMain===v?"on":""}" onclick="F.dirMain=${v};limit=150;renderList()" title="${v?"ролик попадает только в своё основное направление":"ролик попадает и в основное, и в дополнительные направления"}">${t}</button>`).join("")}</div>`+DIRS.filter(([k])=>k!=="none"||cnt.none).map(([k,t])=>`<label class="ck ${cnt[k]?"":"zero"}"><input type="checkbox" ${F.dirs.has(k)?"checked":""} onchange="togDir('${k}')"> ${t}<span class="n">${cnt[k]||0}</span></label>`).join("")
     +(F.dirs.size?`<button class="chip" style="margin-top:6px" onclick="F.dirs.clear();limit=150;renderList()">Все направления</button>`:"");
 }
+function renderAxis(box,list,set,of,noKey,fn){
+  const B=filtered({[noKey]:true}),cnt={};B.forEach(c=>of(c).forEach(d=>cnt[d]=(cnt[d]||0)+1));
+  $(box).innerHTML=list.filter(([k])=>k!=="unk"||cnt.unk).map(([k,t])=>`<label class="ck ${cnt[k]?"":"zero"}"><input type="checkbox" ${set.has(k)?"checked":""} onchange="${fn}('${k}')"> ${t}<span class="n">${cnt[k]||0}</span></label>`).join("")
+    +(set.size?`<button class="chip" style="margin-top:6px" onclick="F.${fn==="togHost"?"hosts":"vis"}.clear();limit=150;renderList()">Сбросить</button>`:"");
+}
+function togHost(k){F.hosts.has(k)?F.hosts.delete(k):F.hosts.add(k);limit=150;renderList();}
+function togVis(k){F.vis.has(k)?F.vis.delete(k):F.vis.add(k);limit=150;renderList();}
 function togDir(k){F.dirs.has(k)?F.dirs.delete(k):F.dirs.add(k);limit=150;renderList();}
 function renderQueues(){
   const B=filtered({noQueue:true});
@@ -254,7 +267,7 @@ function renderQueues(){
   [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
-function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
+function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,hosts:new Set(),vis:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
 ["fv","fs","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
 $("so").onchange=()=>{F.dir=$("so").value==="author"?-1:1;limit=150;renderList();};
 $("q").oninput=()=>{limit=150;renderList();};
@@ -272,6 +285,8 @@ function filtered(opt={}){
     if(F.cta.size&&!F.cta.has(A_(c).cta_mechanic))return false;
     if(F.types.size&&!F.types.has(c.content_type))return false;
     if(!opt.noDir&&F.dirs.size&&!dirsOf(c).some(d=>F.dirs.has(d)))return false;
+    if(!opt.noHost&&F.hosts.size&&!hostOf(c).some(d=>F.hosts.has(d)))return false;
+    if(!opt.noVis&&F.vis.size&&!visOf(c).some(d=>F.vis.has(d)))return false;
     if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note,c.reason].join(" ").toLowerCase().includes(q))return false;
     return true;});
   const d=F.dir||1;
@@ -295,7 +310,7 @@ function renderSrc(){
 function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
 let LIST=[];
 function renderList(){
-  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderSrc(); renderHead();
+  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderAxis("hostBox",HOSTS,F.hosts,hostOf,"noHost","togHost"); renderAxis("visBox",VISS,F.vis,visOf,"noVis","togVis"); renderSrc(); renderHead();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
@@ -356,6 +371,8 @@ function renderTab(){
      <dt>Хук 0–3 с</dt><dd>${e(a.hook_0_3s)} <span class="muted">(${e(a.hook_type)})</span></dd>
      <dt>Формат</dt><dd>${e(a.format)}</dd>
      <dt>Направление</dt><dd>${c.directions?c.directions.split(",").map((d,i)=>i?`<span class="muted">${e(DIRN[d]||d)}</span>`:`<b>${e(DIRN[d]||d)}</b>`).join(" · "):'<span class="muted">не размечено</span>'}</dd>
+     <dt>Ведущий</dt><dd>${c.host?e(HOSTN[c.host]||c.host):'<span class="muted">не размечено</span>'}</dd>
+     <dt>Визуал</dt><dd>${c.visuals?c.visuals.split(",").map((d,i)=>i?`<span class="muted">${e(VISN[d]||d)}</span>`:`<b>${e(VISN[d]||d)}</b>`).join(" · "):'<span class="muted">не размечено</span>'}</dd>
      <dt>Тип</dt><dd>${e((c.content_type||"").replace(/_/g," "))}</dd>
      <dt>CTA</dt><dd>${e(a.cta)} <span class="muted">(${e(a.cta_mechanic)})</span></dd>
      <dt>Эмоция</dt><dd>${e(a.emotion)}</dd>
