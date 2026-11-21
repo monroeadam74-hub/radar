@@ -1202,6 +1202,16 @@ def main():
         n = classify_directions(db)
         log(f"Готово: размечено {n}, Gemini ~${GEM['tin'] / 1e6 * 0.1 + GEM['tout'] / 1e6 * 0.4:.3f} (оценка)")
         return
+    if ENV("RADAR_MODE") == "formats":
+        rows = db.q("SELECT id, platform, source, views, nutra_score, direction, analysis FROM videos WHERE status='analyzed'")
+        print("FMT_BEGIN")
+        for r in rows:
+            a = json.loads(r["analysis"] or "{}")
+            print(json.dumps({"id": r["id"], "p": r["platform"], "src": r["source"], "v": r["views"], "s": r["nutra_score"],
+                              "d": r["direction"], "f": a.get("format"), "h": a.get("hook_type"), "hook": (a.get("hook_0_3s") or "")[:160]},
+                             ensure_ascii=True))
+        print("FMT_END")
+        return
     if ENV("RADAR_MODE") == "medenrich":
         med_enrich()
         return
