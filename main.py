@@ -156,9 +156,12 @@ def apify():
     return ApifyClient(ENV("APIFY_TOKEN"))
 
 
-def run_actor(actor, run_input):
+def run_actor(actor, run_input, max_items=None):
     ac = apify()
-    run = ac.actor(actor).call(run_input=run_input)
+    try:
+        run = ac.actor(actor).call(run_input=run_input, **({"max_items": int(max_items)} if max_items else {}))
+    except TypeError:   # старый клиент без max_items
+        run = ac.actor(actor).call(run_input=run_input)
     ds = run.get("defaultDatasetId") if isinstance(run, dict) else getattr(run, "default_dataset_id", None)
     return list(ac.dataset(ds).iterate_items())
 
@@ -535,7 +538,7 @@ def fetch_instagram(profs, limit, since=None):
         if since and not actor.startswith("apify/"):
             inp["onlyPostsNewerThan"] = since
         try:
-            items = run_actor(actor, inp)
+            items = run_actor(actor, inp, max_items=len(handles) * int(limit))   # предохранитель: не больше заказанного
         except Exception as e:
             log(f"  Instagram: сборщик {actor} упал: {str(e)[:150]}"); items = []
         ok = [it for it in items if _ig_item(it)]
