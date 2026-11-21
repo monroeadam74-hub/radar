@@ -623,6 +623,41 @@ def ig_test():
             log("  журнал недоступен:", e)
 
 
+def med_enrich():
+    """Исследование: свежие данные по списку медицинских профилей (research/med_seed.json) → report/med_enriched.json.
+    Instagram — официальный сборщик профилей (~$2.3/1000, лимит = число ников), YouTube — бесплатный API."""
+    seed = json.load(open("research/med_seed.json"))
+    out = {"ig": [], "yt": [], "tt": seed.get("tt", [])}
+    handles = [h for h, _ in seed["ig"]]
+    ac = apify()
+    run = ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": handles}, max_items=len(handles))
+    items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+    log(f"Instagram: запрошено {len(handles)}, получено {len(items)}")
+    for it in items:
+        out["ig"].append({k: it.get(k) for k in ("username", "fullName", "followersCount", "biography", "externalUrl", "verified",
+                                                  "private", "postsCount", "businessCategoryName", "isBusinessAccount", "error", "inputUrl")})
+    key = ENV("YOUTUBE_KEY"); YT = "https://www.googleapis.com/youtube/v3/"
+    for name, src in seed["yt"]:
+        try:
+            s_ = requests.get(YT + "search", params=dict(key=key, part="snippet", q=name, type="channel", maxResults=3), timeout=60).json()
+            ids = [x["id"]["channelId"] for x in s_.get("items", [])]
+            if not ids:
+                out["yt"].append({"query": name, "found": False}); continue
+            ch = requests.get(YT + "channels", params=dict(key=key, part="snippet,statistics", id=",".join(ids)), timeout=60).json().get("items", [])
+            ch.sort(key=lambda c: int(c["statistics"].get("subscriberCount", 0) or 0), reverse=True)
+            c = ch[0]
+            out["yt"].append({"query": name, "found": True, "id": c["id"], "title": c["snippet"]["title"],
+                              "handle": c["snippet"].get("customUrl"), "subs": int(c["statistics"].get("subscriberCount", 0) or 0),
+                              "country": c["snippet"].get("country"), "lang": c["snippet"].get("defaultLanguage"),
+                              "desc": (c["snippet"].get("description") or "")[:400],
+                              "alts": [(x["snippet"]["title"], x["snippet"].get("customUrl"), int(x["statistics"].get("subscriberCount", 0) or 0)) for x in ch[1:]]})
+        except Exception as e:
+            out["yt"].append({"query": name, "error": str(e)[:150]})
+    os.makedirs("report", exist_ok=True)
+    json.dump(out, open("report/med_enriched.json", "w"), ensure_ascii=False, indent=1)
+    log(f"Готово: IG {len(out['ig'])}, YT {len(out['yt'])}")
+
+
 def fetch_tiktok(profs, limit):
     items = run_actor(CFG.get("tiktok_download_actor", "clockworks/tiktok-scraper"),
                       {"profiles": [p["handle"] for p in profs], "resultsPerPage": int(limit),
@@ -1072,6 +1107,9 @@ def main():
     if ENV("RADAR_MODE") == "thumbs":
         tiktok_thumbs(db)
         db_size(db)
+        return
+    if ENV("RADAR_MODE") == "medenrich":
+        med_enrich()
         return
     if ENV("RADAR_MODE") == "igtest":
         n = db.q("SELECT COUNT(*) n FROM videos WHERE source='profile'")[0]["n"]
