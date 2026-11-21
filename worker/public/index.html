@@ -41,6 +41,9 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .q:hover{background:var(--s1)}.q.on{background:var(--s1);border-color:var(--s3);color:#fff;font-weight:600}
 .ck{display:flex;gap:8px;align-items:center;padding:3px 0;color:var(--t2)}
 .ck input{accent-color:var(--acc);width:16px;height:16px}
+.ck .n{margin-left:auto;color:var(--t3,#8b93a1);font-size:12px}
+.ck.zero{opacity:.45}
+.dtag{color:var(--t2)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .list{flex:999 1 520px;min-width:0;background:var(--s1);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .lh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
@@ -143,6 +146,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
       <label class="ck"><input type="checkbox" id="pYT" checked> YouTube Shorts</label>
       <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label>
       <label class="ck"><input type="checkbox" id="pIG" checked> Instagram</label></div>
+    <div><h4>Направление</h4><div id="dirBox"></div></div>
     <div><h4>Статус</h4><select id="fs" style="width:100%">
       <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
       <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option><option value="profile_rest">Профили: не выстрел</option></select></div>
@@ -203,7 +207,10 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
-let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), queue:"all", src:"all", dir:1};
+let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), queue:"all", src:"all", dir:1};
+const DIRS=[["joints","Суставы и спина"],["potency","Потенция"],["prostate","Простата"],["sugar","Сахар в крови"],["weight","Похудение и метаболизм"],["heart","Давление и сердце"],["brain","Память и мозг"],["vision","Зрение"],["hearing","Слух и шум в ушах"],["gut","ЖКТ и кишечник"],["liver","Печень и детокс"],["sleep","Сон и стресс"],["women","Женское здоровье"],["veins","Вены и ноги"],["skin","Кожа и антиэйдж"],["hair","Волосы и ногти"],["energy","Энергия и усталость"],["immunity","Иммунитет и воспаление"],["kidney","Почки и мочевой пузырь"],["general","Общее / долголетие"],["other","Не про здоровье"],["none","Не размечено"]];
+const DIRN=Object.fromEntries(DIRS);
+const dirsOf=c=>c.directions?c.directions.split(","):["none"];
 const $=id=>document.getElementById(id);
 const e=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const n=x=>x==null||x===""?"—":Number(x).toLocaleString("ru-RU");
@@ -234,6 +241,12 @@ function buildSide(){
   renderQueues();
 }
 function togIdx(kind,i){const set=F[kind],v=(kind==="cta"?window._ctas:window._types)[i];set.has(v)?set.delete(v):set.add(v);renderList();}
+function renderDirs(){
+  const B=filtered({noDir:true}),cnt={};B.forEach(c=>dirsOf(c).forEach(d=>cnt[d]=(cnt[d]||0)+1));
+  $("dirBox").innerHTML=DIRS.filter(([k])=>k!=="none"||cnt.none).map(([k,t])=>`<label class="ck ${cnt[k]?"":"zero"}"><input type="checkbox" ${F.dirs.has(k)?"checked":""} onchange="togDir('${k}')"> ${t}<span class="n">${cnt[k]||0}</span></label>`).join("")
+    +(F.dirs.size?`<button class="chip" style="margin-top:6px" onclick="F.dirs.clear();limit=150;renderList()">Все направления</button>`:"");
+}
+function togDir(k){F.dirs.has(k)?F.dirs.delete(k):F.dirs.add(k);limit=150;renderList();}
 function renderQueues(){
   const B=filtered({noQueue:true});
   const cnt={all:B.filter(x=>!x.hidden).length,none:B.filter(x=>!x.hidden&&!x.label).length,good:B.filter(x=>!x.hidden&&x.label==="good").length,bad:B.filter(x=>!x.hidden&&x.label==="bad").length,hidden:B.filter(x=>x.hidden).length};
@@ -241,7 +254,7 @@ function renderQueues(){
   [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
-function resetF(){F={score:0,cta:new Set(),types:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
+function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
 ["fv","fs","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
 $("so").onchange=()=>{F.dir=$("so").value==="author"?-1:1;limit=150;renderList();};
 $("q").oninput=()=>{limit=150;renderList();};
@@ -258,6 +271,7 @@ function filtered(opt={}){
     if(F.score&&(c.nutra_score||0)<F.score)return false;
     if(F.cta.size&&!F.cta.has(A_(c).cta_mechanic))return false;
     if(F.types.size&&!F.types.has(c.content_type))return false;
+    if(!opt.noDir&&F.dirs.size&&!dirsOf(c).some(d=>F.dirs.has(d)))return false;
     if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note,c.reason].join(" ").toLowerCase().includes(q))return false;
     return true;});
   const d=F.dir||1;
@@ -281,7 +295,7 @@ function renderSrc(){
 function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
 let LIST=[];
 function renderList(){
-  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderSrc(); renderHead();
+  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderSrc(); renderHead();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
@@ -292,7 +306,7 @@ function row(c){
   const lb=c.label==="good"?`<span class="lbl good">нужно</span>`:c.label==="bad"?`<span class="lbl bad">мусор</span>`:"";
   return `<div class="row ${c.id===selId?"sel":""} ${c.label==="bad"?"bad":""} ${c.hidden?"hid":""}" id="r_${c.id}" onclick="select('${c.id}')">
     <img class="th" loading="lazy" referrerpolicy="no-referrer" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
-    <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ"> (ИИ)</span>':""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
+    <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}${c.direction?` · <span class="dtag">${e(DIRN[c.direction]||c.direction)}</span>`:""}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ"> (ИИ)</span>':""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
     <div>${short(c.views)}</div><div class="c4" title="${c.source==="profile"?"просмотры ÷ медиана просмотров автора":"просмотры ÷ подписчики"}">${xOf(c)?"×"+(xOf(c)<10?(+xOf(c)).toFixed(1).replace(".0",""):Math.round(xOf(c))):"—"}${c.source==="profile"?'<span class="muted" style="font-size:11px"> мед</span>':""}</div>
     <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
     <div class="hook">${e(a.hook_0_3s||c.title||"")}</div></div>`;
@@ -341,6 +355,7 @@ function renderTab(){
   if(tab==="an") h=c.analysis?`<dl>
      <dt>Хук 0–3 с</dt><dd>${e(a.hook_0_3s)} <span class="muted">(${e(a.hook_type)})</span></dd>
      <dt>Формат</dt><dd>${e(a.format)}</dd>
+     <dt>Направление</dt><dd>${c.directions?c.directions.split(",").map((d,i)=>i?`<span class="muted">${e(DIRN[d]||d)}</span>`:`<b>${e(DIRN[d]||d)}</b>`).join(" · "):'<span class="muted">не размечено</span>'}</dd>
      <dt>Тип</dt><dd>${e((c.content_type||"").replace(/_/g," "))}</dd>
      <dt>CTA</dt><dd>${e(a.cta)} <span class="muted">(${e(a.cta_mechanic)})</span></dd>
      <dt>Эмоция</dt><dd>${e(a.emotion)}</dd>

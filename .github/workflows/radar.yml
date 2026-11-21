@@ -7,7 +7,7 @@ on:
   workflow_dispatch:         # кнопка «Run workflow» для ручного запуска
     inputs:
       mode:
-        description: "full — поиск + разбор; analyze — только разобрать найденное; profiles — обновить профили; thumbs — обложки TikTok"
+        description: "full — поиск + разбор; analyze — только разобрать найденное; profiles — обновить профили; thumbs — обложки TikTok; directions — разметить направления по тексту"
         default: "full"
       import_run:
         description: "Профили: взять данные уже оплаченного запуска Apify (ID или last) вместо нового сбора"

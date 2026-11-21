@@ -288,6 +288,8 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
  "emotion": "эмоциональная дуга",
  "product_mentioned": "продукт/бренд или 'нет'",
  "target_audience": "возраст, пол, проблема",
+ "direction": "одно основное направление по симптоматике — ключ из справочника ниже",
+ "direction_extra": ["0–2 дополнительных ключа, только если ролик реально про них"],
  "nutra_score": число 1-5 по шкале:
 {scale}
  "nutra_reason": "почему такой балл, 1 предложение",
@@ -297,7 +299,82 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
  "on_screen_text": [{{"t": секунда, "orig": "надпись", "ru": "перевод"}}],
  "subtitles": [{{"start": сек, "end": сек, "orig": "фраза", "ru": "перевод"}}]
 }}
+Справочник направлений (ключ — название):
+{dirs}
+{hints}
 Субтитры: каждая фраза 1–4 сек, не длиннее ~12 слов, таймкоды по моменту речи, все end ≤ {dur}. Речи нет — пустой список."""
+
+
+DIRECTIONS = [
+    ("joints", "Суставы и спина"), ("potency", "Потенция"), ("prostate", "Простата"), ("sugar", "Сахар в крови"),
+    ("weight", "Похудение и метаболизм"), ("heart", "Давление и сердце"), ("brain", "Память и мозг"), ("vision", "Зрение"),
+    ("hearing", "Слух и шум в ушах"), ("gut", "ЖКТ и кишечник"), ("liver", "Печень и детокс"), ("sleep", "Сон и стресс"),
+    ("women", "Женское здоровье"), ("veins", "Вены и ноги"), ("skin", "Кожа и антиэйдж"), ("hair", "Волосы и ногти"),
+    ("energy", "Энергия и усталость"), ("immunity", "Иммунитет и воспаление"), ("kidney", "Почки и мочевой пузырь"),
+    ("general", "Общее / долголетие"), ("other", "Не про здоровье"),
+]
+DIR_KEYS = {k for k, _ in DIRECTIONS}
+DIR_LIST = "\n".join(f"{k} — {t}" for k, t in DIRECTIONS)
+DIR_HINTS = ("Подсказки: потенция (эрекция, либидо, тестостерон) и простата (простатит, мочеиспускание у мужчин) — разные; "
+             "давление и сердце (гипертония, холестерин, сердце, артерии) и вены и ноги (варикоз, отёки, тяжесть в ногах, нейропатия стоп) — разные; "
+             "general — здоровье без конкретной проблемы («5 продуктов после 50», привычки долгожителей); "
+             "other — ролик не про здоровье.")
+
+
+def norm_dirs(main, extra=None):
+    """→ (основное, 'основное,доп1,доп2') только из справочника."""
+    d = str(main or "").strip().lower()
+    d = d if d in DIR_KEYS else None
+    ex = [str(x).strip().lower() for x in (extra or []) if isinstance(x, str)]
+    ex = [x for x in ex if x in DIR_KEYS and x != d and x != "other"][:2]
+    if not d and ex:
+        d, ex = ex[0], ex[1:]
+    return d, ",".join([d] + ex) if d else None
+
+
+DIRCLASS = """Отнеси каждый ролик о здоровье к направлению по симптоматике/проблеме, которой он посвящён.
+Справочник (используй только ключи слева):
+{dirs}
+{hints}
+Для каждого ролика: "direction" — одно основное направление, "extra" — 0–2 дополнительных (только если ролик реально про них).
+Верни JSON-список: [{{"id": "...", "direction": "ключ", "extra": ["ключ"]}}]
+Ролики:
+{items}"""
+
+
+def classify_directions(db, limit=4000):
+    """Разметка направлений по уже сохранённому тексту (подпись, разбор, субтитры) — без загрузки видео."""
+    rows = db.q("SELECT id, title, analysis, subtitles FROM videos WHERE direction IS NULL LIMIT ?", [limit])
+    log(f"Направления: к разметке {len(rows)} роликов")
+    done = 0
+    for i in range(0, len(rows), 30):
+        chunk = rows[i:i + 30]
+        items = []
+        for r in chunk:
+            a = json.loads(r["analysis"] or "{}") if r.get("analysis") else {}
+            subs = json.loads(r["subtitles"] or "[]") if r.get("subtitles") else []
+            speech = " ".join(str(s.get("ru") or s.get("orig") or "") for s in subs if isinstance(s, dict))[:350]
+            txt = " | ".join(x for x in [(r.get("title") or "")[:300], a.get("hook_0_3s"), a.get("target_audience"),
+                                          a.get("product_mentioned"), speech] if x and x != "нет")
+            items.append(f'{r["id"]}: {txt!r}')
+        data = ask([DIRCLASS.format(dirs=DIR_LIST, hints=DIR_HINTS, items="\n".join(items))], "направления")
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        upd = []
+        for d in data or []:
+            if not isinstance(d, dict) or not d.get("id"):
+                continue
+            main, alls = norm_dirs(d.get("direction"), d.get("extra"))
+            if main:
+                upd.append((d["id"], main, alls))
+        if upd:
+            ids = ",".join(lit(u[0]) for u in upd)
+            db.q("UPDATE videos SET direction = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[1])}" for u in upd) +
+                 " END, directions = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[2])}" for u in upd) +
+                 f" END WHERE id IN ({ids})")
+            done += len(upd)
+        log(f"  размечено {done}/{len(rows)}")
+    return done
 
 
 def prefilter(cands, vertical):
@@ -341,7 +418,8 @@ def clean_subs(subs, dur):
 def analyze(c, video_bytes=None):
     from google.genai import types
     v = CFG["verticals"].get(c["vertical"]) or PROFILE_VERTICAL
-    prompt = ANALYSIS.format(vname=v.get("name", c["vertical"]), scale=v.get("nutra_scale", ""), dur=c.get("duration") or 60)
+    prompt = ANALYSIS.format(vname=v.get("name", c["vertical"]), scale=v.get("nutra_scale", ""), dur=c.get("duration") or 60,
+                           dirs=DIR_LIST, hints=DIR_HINTS)
     if c["platform"] == "YouTube":
         part = types.Part(file_data=types.FileData(file_uri=f"https://www.youtube.com/watch?v={c['raw_id']}"))
     else:
@@ -380,6 +458,9 @@ def upsert_video(db, c, status, pre=None, a=None):
         db.q("UPDATE videos SET status=?, nutra_score=?, content_type=?, analysis=?, subtitles=?, lang=COALESCE(NULLIF(?, ''), lang) WHERE id=?",
              [status, int(a.get("nutra_score") or 0) or None, a.get("content_type"), a2, a.get("subtitles") or [],
               (a.get("language") or "")[:5], c["id"]])
+        dm, da = norm_dirs(a.get("direction"), a.get("direction_extra"))
+        if dm:
+            db.q("UPDATE videos SET direction=?, directions=? WHERE id=?", [dm, da, c["id"]])
     elif existing and status:
         db.q("UPDATE videos SET status=COALESCE(status, ?) WHERE id=?", [status, c["id"]])
     if a is None:
@@ -1100,7 +1181,8 @@ def main():
         db.q(s)
     for alter in ("ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
                   "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER",
-                  "ALTER TABLE profiles ADD COLUMN deep INTEGER"):
+                  "ALTER TABLE profiles ADD COLUMN deep INTEGER", "ALTER TABLE videos ADD COLUMN direction TEXT",
+                  "ALTER TABLE videos ADD COLUMN directions TEXT"):
         try:
             db.q(alter)
         except Exception:
@@ -1109,6 +1191,10 @@ def main():
     if ENV("RADAR_MODE") == "thumbs":
         tiktok_thumbs(db)
         db_size(db)
+        return
+    if ENV("RADAR_MODE") == "directions":
+        n = classify_directions(db)
+        log(f"Готово: размечено {n}, Gemini ~${GEM['tin'] / 1e6 * 0.1 + GEM['tout'] / 1e6 * 0.4:.3f} (оценка)")
         return
     if ENV("RADAR_MODE") == "medenrich":
         med_enrich()
@@ -1125,6 +1211,10 @@ def main():
             tiktok_thumbs(db)
         except Exception as e:
             log("Обложки TikTok: ошибка", str(e)[:200])
+        try:
+            classify_directions(db)
+        except Exception as e:
+            log("Направления: ошибка", str(e)[:200])
         cost = GEM["tin"] / 1e6 * 0.25 + GEM["tout"] / 1e6 * 1.5
         stats["cost"] = cost
         db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), stats["found"], stats["new"],
@@ -1212,6 +1302,10 @@ def main():
         tiktok_thumbs(db)
     except Exception as e:
         log("Обложки TikTok: ошибка", str(e)[:200])
+    try:
+        classify_directions(db)
+    except Exception as e:
+        log("Направления: ошибка", str(e)[:200])
     cost = GEM["tin"] / 1e6 * 0.25 + GEM["tout"] / 1e6 * 1.5
     stats = dict(found=found, new=len(new_ids), analyzed=analyzed, cost=cost)
     db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), found, len(new_ids), analyzed, cost, "\n".join(LOG)[-20000:]])

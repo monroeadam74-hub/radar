@@ -29,7 +29,8 @@ async function ensure(env) {
   if (ensured) return;
   for (const s of SCHEMA) await env.DB.prepare(s).run();
   for (const a of ["ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
-                   "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER"]) {
+                   "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER",
+                   "ALTER TABLE videos ADD COLUMN direction TEXT", "ALTER TABLE videos ADD COLUMN directions TEXT"]) {
     try { await env.DB.prepare(a).run(); } catch {}
   }
   // стартовые профили — ИИ-персонажи (метка ставится один раз, дальше переключается во вкладке «Профили»)
@@ -67,7 +68,7 @@ async function api(req, env, url) {
       const r = await env.DB.prepare(
         `SELECT v.id, v.platform, v.vertical, v.url, v.author, v.author_id, v.title, v.published, v.duration, v.lang, v.keyword,
                 v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score,
-                v.content_type, v.analysis, v.subtitles, v.first_seen, v.source, v.vs_median, COALESCE(pr.ai, 0) AS ai, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
+                v.content_type, v.analysis, v.subtitles, v.first_seen, v.source, v.vs_median, v.direction, v.directions, COALESCE(pr.ai, 0) AS ai, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
          FROM videos v LEFT JOIN labels l ON l.id = v.id LEFT JOIN profiles pr ON pr.id = v.author_id ORDER BY v.views DESC LIMIT 3000`).all();
       rows = r.results || [];
     } catch (e) { return json({ videos: [], note: "Таблица videos ещё не создана — запустите сбор" }); }
