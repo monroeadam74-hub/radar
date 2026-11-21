@@ -46,6 +46,8 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .lh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
 .grid-h,.row{display:grid;grid-template-columns:52px minmax(0,1.6fr) 100px 62px 56px minmax(0,2.4fr);gap:12px;align-items:center;padding:8px 16px}
 .grid-h{font-size:12px;color:var(--m);border-bottom:1px solid var(--line)}
+.grid-h button{border:none;background:none;color:var(--m);padding:4px 0;font:inherit;text-align:left;cursor:pointer}
+.grid-h button:hover{color:var(--t)}.grid-h button.on{color:var(--acc);font-weight:600}
 .row{border-top:1px solid #171B21;cursor:pointer;border-left:3px solid transparent}
 .row:hover{background:#151A20}.row.sel{background:var(--accbg);border-left-color:var(--acc)}
 .row.bad{opacity:.55}.row.hid{opacity:.4}
@@ -148,13 +150,14 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <div><h4>Механика CTA</h4><div id="ctaBox"></div></div>
     <div><h4>Тип контента</h4><div id="typeBox"></div></div>
     <div><h4>Сортировка</h4><select id="so" style="width:100%">
-      <option value="score">Балл, потом просмотры</option><option value="views">Просмотры</option><option value="outlier">Outlier (×)</option><option value="new">Сначала новые</option></select></div>
+      <option value="score">Балл, потом просмотры</option><option value="views">Просмотры</option><option value="outlier">× (выстрел)</option><option value="pub">Дата публикации</option><option value="new">Дата добавления</option><option value="author">Автор (А–Я)</option></select>
+    <div class="chips" style="margin-top:6px"><button class="chip" id="dirB" onclick="F.dir*=-1;limit=150;renderList()">↓ по убыванию</button></div></div>
     <button class="btn" onclick="resetF()">Сбросить фильтры</button>
   </aside>
 
   <main class="list">
     <div class="lh"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div class="src" id="srcBox"></div><div id="cnt" class="muted"></div></div><div class="muted" id="lstat"></div></div>
-    <div class="grid-h"><div></div><div>Автор</div><div>Просмотры</div><div>×</div><div>Балл</div><div>Хук</div></div>
+    <div class="grid-h" id="gridH"></div>
     <div id="rows"></div>
     <div class="more"><button class="btn" id="moreBtn" onclick="limit+=150;renderList()">Показать ещё</button></div>
   </main>
@@ -200,7 +203,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
-let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), queue:"all", src:"all"};
+let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), queue:"all", src:"all", dir:1};
 const $=id=>document.getElementById(id);
 const e=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const n=x=>x==null||x===""?"—":Number(x).toLocaleString("ru-RU");
@@ -239,7 +242,8 @@ function renderQueues(){
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
 function resetF(){F={score:0,cta:new Set(),types:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
-["fv","fs","so","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
+["fv","fs","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
+$("so").onchange=()=>{F.dir=$("so").value==="author"?-1:1;limit=150;renderList();};
 $("q").oninput=()=>{limit=150;renderList();};
 
 function filtered(opt={}){
@@ -256,8 +260,18 @@ function filtered(opt={}){
     if(F.types.size&&!F.types.has(c.content_type))return false;
     if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note,c.reason].join(" ").toLowerCase().includes(q))return false;
     return true;});
-  const key={views:c=>c.views||0,score:c=>(c.nutra_score||0)*1e12+(c.views||0),outlier:c=>xOf(c)||0,new:c=>Date.parse(c.first_seen||0)||0}[so];
-  return r.sort((a,b)=>key(b)-key(a));
+  const d=F.dir||1;
+  if(so==="author")return r.sort((a,b)=>-d*String(a.author||"").localeCompare(String(b.author||""),"ru",{sensitivity:"base"})||(b.views||0)-(a.views||0));
+  const key={views:c=>c.views||0,score:c=>(c.nutra_score||0)*1e12+(c.views||0),outlier:c=>xOf(c)||0,
+    new:c=>Date.parse(c.first_seen||0)||0,pub:c=>Date.parse(c.published||0)||0}[so]||(c=>c.views||0);
+  return r.sort((a,b)=>d*(key(b)-key(a)));
+}
+const COLS=[["",null],["Автор","author"],["Просмотры","views"],["×","outlier"],["Балл","score"],["Хук",null]];
+function sortBy(k){const so=$("so");if(so.value===k)F.dir*=-1;else{so.value=k;F.dir=k==="author"?-1:1;}limit=150;renderList();}
+function renderHead(){
+  const so=$("so").value,d=F.dir||1,asc=so==="author"?d<0:d<0;
+  $("gridH").innerHTML=COLS.map(([t,k])=>k?`<div><button class="${so===k?"on":""}" onclick="sortBy('${k}')" title="Сортировать">${t}${so===k?(asc?" ↑":" ↓"):""}</button></div>`:`<div>${t}</div>`).join("");
+  const b=$("dirB");if(b)b.textContent=asc?"↑ по возрастанию":"↓ по убыванию";
 }
 const xOf=c=>c.source==="profile"?c.vs_median:c.outlier;
 function renderSrc(){
@@ -267,7 +281,7 @@ function renderSrc(){
 function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
 let LIST=[];
 function renderList(){
-  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderSrc();
+  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderSrc(); renderHead();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
