@@ -630,7 +630,8 @@ def med_enrich():
     out = {"ig": [], "yt": [], "tt": seed.get("tt", [])}
     handles = [h for h, _ in seed["ig"]]
     ac = apify()
-    run = ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": handles}, max_items=len(handles))
+    rid = ENV("RADAR_IMPORT_RUN")
+    run = ac.run(rid).get() if rid else ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": handles}, max_items=len(handles))
     items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
     log(f"Instagram: запрошено {len(handles)}, получено {len(items)}")
     for it in items:
@@ -656,6 +657,7 @@ def med_enrich():
     os.makedirs("report", exist_ok=True)
     json.dump(out, open("report/med_enriched.json", "w"), ensure_ascii=False, indent=1)
     log(f"Готово: IG {len(out['ig'])}, YT {len(out['yt'])}")
+    print("MEDJSON_BEGIN"); print(json.dumps(out, ensure_ascii=False)); print("MEDJSON_END")
 
 
 def fetch_tiktok(profs, limit):
