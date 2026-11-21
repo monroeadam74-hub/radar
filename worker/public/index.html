@@ -73,6 +73,10 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .acts .b{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent;color:var(--bad);font-weight:600}
 .acts .b.on{background:var(--badbg);border-color:var(--bad)}
 .acts .h{height:44px;border-radius:12px;border:1px solid #3A424D;background:transparent}
+.src{display:flex;gap:6px;flex-wrap:wrap}
+.star{height:34px;padding:0 12px;border-radius:999px;border:1px solid #3A424D;background:transparent;color:var(--t2);white-space:nowrap}
+.star.on{border-color:var(--mid);color:var(--mid);background:#2A2410}
+.addp{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.addp input{flex:1 1 320px}
 .why{border:1px solid #5A2A22;background:#1A1210;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .why .chips button{height:28px;font-size:12px}
 .why input{width:100%}
@@ -117,12 +121,12 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
   <div class="logo">радар<b>.</b></div>
   <nav class="nav" aria-label="Разделы">
     <button class="on" data-v="videos">Ролики</button>
-    <button data-v="authors">Страницы</button>
+    <button data-v="authors">Профили</button>
     <button data-v="settings">Настройки</button>
     <button data-v="runs">Запуски</button>
   </nav>
   <label class="search"><span style="position:absolute;left:-9999px">Поиск</span><input id="q" placeholder="Поиск: автор, хук, подпись, ключ…"></label>
-  <span class="kbd"><b>↑</b><b>↓</b> выбор · <b>1</b> нужно · <b>2</b> мусор · <b>H</b> скрыть · <b>Space</b> play</span>
+  <span class="kbd"><b>↑</b><b>↓</b> выбор · <b>1</b> нужно · <b>2</b> мусор · <b>H</b> скрыть · <b>F</b> следить · <b>Space</b> play</span>
 </header>
 
 <section class="view on" id="v_videos">
@@ -132,10 +136,11 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <div><h4>Вертикаль</h4><select id="fv" style="width:100%"></select></div>
     <div><h4>Площадка</h4>
       <label class="ck"><input type="checkbox" id="pYT" checked> YouTube Shorts</label>
-      <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label></div>
+      <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label>
+      <label class="ck"><input type="checkbox" id="pIG" checked> Instagram</label></div>
     <div><h4>Статус</h4><select id="fs" style="width:100%">
       <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
-      <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option></select></div>
+      <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option><option value="profile_rest">Профили: не выстрел</option></select></div>
     <div><h4>Балл под нутру</h4><div class="chips" id="scoreChips"></div></div>
     <div><h4>Механика CTA</h4><div id="ctaBox"></div></div>
     <div><h4>Тип контента</h4><div id="typeBox"></div></div>
@@ -145,7 +150,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
   </aside>
 
   <main class="list">
-    <div class="lh"><div id="cnt" class="muted"></div><div class="muted" id="lstat"></div></div>
+    <div class="lh"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div class="src" id="srcBox"></div><div id="cnt" class="muted"></div></div><div class="muted" id="lstat"></div></div>
     <div class="grid-h"><div></div><div>Автор</div><div>Просмотры</div><div>×</div><div>Балл</div><div>Хук</div></div>
     <div id="rows"></div>
     <div class="more"><button class="btn" id="moreBtn" onclick="limit+=150;renderList()">Показать ещё</button></div>
@@ -156,9 +161,21 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 </section>
 
 <section class="view" id="v_authors"><div class="pad">
+  <div class="panel" style="max-width:none">
+    <h3>Мои профили <span class="muted" style="font:400 13px Inter">обновляются автоматически раз в 3 дня</span></h3>
+    <div class="addp">
+      <input id="padd" placeholder="Ссылка или ник: instagram.com/farmtruths · tiktok.com/@user · youtube.com/@channel" onkeydown="if(event.key==='Enter')addProfile()">
+      <button class="btn pri" onclick="addProfile()">Добавить</button>
+      <button class="btn" onclick="runNow('profiles')">Обновить сейчас</button>
+      <span id="pmsg" class="muted" style="align-self:center"></span>
+    </div>
+    <div style="overflow:auto"><table id="ptable"></table></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Выстрел — ролик с просмотрами ≥ 2× от медианы автора. При добавлении разбираются 5 самых просматриваемых роликов, дальше — только новые выстрелы. Ролики удалённого профиля остаются в базе.</div>
+  </div>
+  <h3 style="font:700 16px 'Space Grotesk',sans-serif;margin:18px 0 10px">Все авторы из поиска</h3>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <input id="aq" placeholder="Поиск страницы" oninput="renderAuthors()">
-    <select id="ap" onchange="renderAuthors()"><option value="">Все площадки</option><option>YouTube</option><option>TikTok</option></select>
+    <select id="ap" onchange="renderAuthors()"><option value="">Все площадки</option><option>YouTube</option><option>TikTok</option><option>Instagram</option></select>
     <select id="arel" onchange="renderAuthors()"><option value="1">С выстрелами по теме</option><option value="0">Все</option></select>
   </div>
   <div style="overflow:auto"><table id="atable"></table></div>
@@ -172,6 +189,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn pri" onclick="runNow('analyze')">Только разобрать найденное</button>
       <button class="btn" onclick="runNow('full')">Искать и разобрать</button>
+      <button class="btn" onclick="runNow('profiles')">Обновить профили</button>
       <span id="runmsg" class="muted"></span></div></div>
   <div id="runs"></div>
 </div></section>
@@ -179,7 +197,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
-let V=[], A=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), queue:"all"};
+let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), queue:"all", src:"all"};
 const $=id=>document.getElementById(id);
 const e=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const n=x=>x==null||x===""?"—":Number(x).toLocaleString("ru-RU");
@@ -217,30 +235,36 @@ function renderQueues(){
   [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
-function resetF(){F={score:0,cta:new Set(),types:new Set(),queue:"all"};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
-["fv","fs","so","pYT","pTT"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
+function resetF(){F={score:0,cta:new Set(),types:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
+["fv","fs","so","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
 $("q").oninput=()=>{limit=150;renderList();};
 
 function filtered(opt={}){
-  const fv=$("fv").value,fs=$("fs").value,so=$("so").value,q=$("q").value.toLowerCase(),yt=$("pYT").checked,tt=$("pTT").checked;
+  const fv=$("fv").value,fs=$("fs").value,so=$("so").value,q=$("q").value.toLowerCase(),yt=$("pYT").checked,tt=$("pTT").checked,ig=$("pIG").checked;
   let r=V.filter(c=>{
     if(!opt.noQueue){
     if(F.queue==="hidden"){if(!c.hidden)return false;}else if(c.hidden)return false;
     if(F.queue==="none"&&c.label)return false; if((F.queue==="good"||F.queue==="bad")&&c.label!==F.queue)return false;}
     if(fv&&c.vertical!==fv)return false; if(!opt.noStatus&&fs&&c.status!==fs)return false;
-    if(c.platform==="YouTube"&&!yt)return false; if(c.platform==="TikTok"&&!tt)return false;
+    if(c.platform==="YouTube"&&!yt)return false; if(c.platform==="TikTok"&&!tt)return false; if(c.platform==="Instagram"&&!ig)return false;
+    if(!opt.noSrc&&F.src!=="all"&&(c.source==="profile"?"profile":"search")!==F.src)return false;
     if(F.score&&(c.nutra_score||0)<F.score)return false;
     if(F.cta.size&&!F.cta.has(A_(c).cta_mechanic))return false;
     if(F.types.size&&!F.types.has(c.content_type))return false;
     if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note,c.reason].join(" ").toLowerCase().includes(q))return false;
     return true;});
-  const key={views:c=>c.views||0,score:c=>(c.nutra_score||0)*1e12+(c.views||0),outlier:c=>c.outlier||0,new:c=>Date.parse(c.first_seen||0)||0}[so];
+  const key={views:c=>c.views||0,score:c=>(c.nutra_score||0)*1e12+(c.views||0),outlier:c=>xOf(c)||0,new:c=>Date.parse(c.first_seen||0)||0}[so];
   return r.sort((a,b)=>key(b)-key(a));
+}
+const xOf=c=>c.source==="profile"?c.vs_median:c.outlier;
+function renderSrc(){
+  const B=filtered({noSrc:true}),np=B.filter(c=>c.source==="profile").length;
+  $("srcBox").innerHTML=[["all","Всё",B.length],["search","Поиск",B.length-np],["profile","Профили",np]].map(([k,t,n])=>`<button class="chip ${F.src===k?"on":""}" onclick="F.src='${k}';limit=150;renderList()">${t} · ${n}</button>`).join("");
 }
 function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
 let LIST=[];
 function renderList(){
-  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues();
+  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderSrc();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
@@ -251,8 +275,8 @@ function row(c){
   const lb=c.label==="good"?`<span class="lbl good">нужно</span>`:c.label==="bad"?`<span class="lbl bad">мусор</span>`:"";
   return `<div class="row ${c.id===selId?"sel":""} ${c.label==="bad"?"bad":""} ${c.hidden?"hid":""}" id="r_${c.id}" onclick="select('${c.id}')">
     <img class="th" loading="lazy" referrerpolicy="no-referrer" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
-    <div class="au"><b>@${e(c.author)}${lb}</b><span>${c.platform==="YouTube"?"YouTube":"TikTok"} · ${c.duration||"?"} с</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
-    <div>${short(c.views)}</div><div class="c4">${c.outlier?"×"+Math.round(c.outlier):"—"}</div>
+    <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
+    <div>${short(c.views)}</div><div class="c4" title="${c.source==="profile"?"просмотры ÷ медиана просмотров автора":"просмотры ÷ подписчики"}">${xOf(c)?"×"+(xOf(c)<10?(+xOf(c)).toFixed(1).replace(".0",""):Math.round(xOf(c))):"—"}${c.source==="profile"?'<span class="muted" style="font-size:11px"> мед</span>':""}</div>
     <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
     <div class="hook">${e(a.hook_0_3s||c.title||"")}</div></div>`;
 }
@@ -276,7 +300,8 @@ function renderDet(autoplay){
      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
        <div><div style="font:700 17px 'Space Grotesk',sans-serif">@${e(c.author)}</div>
        <div class="muted" style="font-size:13px">${c.platform} · ${n(c.views)} просм. · ${n(c.followers)} подп. · ${e(c.published||"")}</div></div>
-       ${c.nutra_score?`<span class="tag s${c.nutra_score}" style="font-size:14px">${c.nutra_score}/5</span>`:""}
+       <div style="display:flex;gap:8px;align-items:center">${c.nutra_score?`<span class="tag s${c.nutra_score}" style="font-size:14px">${c.nutra_score}/5</span>`:""}
+       <button class="star ${isTracked(c)?"on":""}" id="starB" onclick="follow()" title="Следить за автором · F">${isTracked(c)?"★ В профилях":"☆ Следить"}</button></div>
      </div>
      <div class="acts">
        <button class="g ${c.label==="good"?"":"off"}" onclick="setLabel('good')">Нужно · 1</button>
@@ -291,7 +316,7 @@ function renderDet(autoplay){
    </div>`;
   renderTab(); renderWhy(); if(autoplay)play(true);
 }
-const STATUS={queued:"ждёт разбора",prefilter:"ждёт фильтра",skip_topic:"отсеян: не по теме",skip_lang:"отсеян: другой язык"};
+const STATUS={profile_rest:"не выстрел профиля (разбираем только ролики ≥ 2× медианы)",queued:"ждёт разбора",prefilter:"ждёт фильтра",skip_topic:"отсеян: не по теме",skip_lang:"отсеян: другой язык"};
 function renderTab(){
   const c=cur(); if(!c)return; const a=A_(c);
   document.querySelectorAll(".tabs button").forEach((b,i)=>b.classList.toggle("on",["an","sub","ost","note"][i]===tab));
@@ -320,6 +345,7 @@ function loadYT(){if(ytReady)return ytReady;ytReady=new Promise(res=>{window.onY
 function setSub(m){subMode=m;document.querySelectorAll(".pctl .sm").forEach(b=>b.classList.toggle("on",b.dataset.m===m));}
 async function play(muted){
   const c=cur(); if(!c)return; const box=$("pl");
+  if(c.platform==="Instagram"){box.innerHTML=`<iframe src="https://www.instagram.com/reel/${raw(c.id)}/embed/" allow="autoplay;fullscreen" style="background:#fff"></iframe>`;return;}
   if(c.platform==="TikTok"){box.innerHTML=`<iframe src="https://www.tiktok.com/embed/v2/${raw(c.id)}" allow="autoplay;fullscreen"></iframe>`;return;}
   box.innerHTML=`<div class="yt" id="ytp"></div><div class="pctl">
      ${[["ru","RU"],["orig","EN"],["off","Без"]].map(([k,t])=>`<button class="sm ${subMode===k?"on":""}" data-m="${k}" onclick="setSub('${k}')">${t}</button>`).join("")}
@@ -370,15 +396,53 @@ document.addEventListener("keydown",ev=>{
   else if(ev.key==="ArrowUp"||ev.key==="k"){ev.preventDefault();const nx=LIST[Math.max(0,i-1)];if(nx)select(nx.id);}
   else if(ev.key==="1")setLabel("good"); else if(ev.key==="2")setLabel("bad");
   else if(ev.key==="h"||ev.key==="H"||ev.key==="р"||ev.key==="Р")hide();
+  else if(ev.key==="f"||ev.key==="F"||ev.key==="а"||ev.key==="А")follow();
   else if(ev.key===" "){ev.preventDefault();if(player&&player.getPlayerState){player.getPlayerState()===1?player.pauseVideo():(player.unMute(),player.playVideo());}else play();}
 });
 
-async function loadAuthors(){if(!A.length)A=(await api("/api/authors")).authors||[];renderAuthors();}
+async function loadAuthors(){await loadProfiles();if(!A.length)A=(await api("/api/authors")).authors||[];renderAuthors();}
+const PFX={Instagram:"ig",TikTok:"tt",YouTube:"yt"};
+function authorKey(platform,author_id,handle){
+  if(author_id&&/^(ig|tt|yt):/.test(author_id))return author_id;
+  const h=(author_id&&author_id.slice(3))||handle||"";return `${PFX[platform]}:${h.toLowerCase()}`;}
+function isTracked(c){const k=authorKey(c.platform,c.author_id,c.author);return P.some(p=>p.id===k);}
+async function loadProfiles(){try{P=(await api("/api/profiles")).profiles||[];}catch(e){P=[];}renderProfiles();}
+function ago(t){if(!t)return"—";const d=(Date.now()-Date.parse(t+(t.endsWith("Z")?"":"Z")))/864e5;return d<1?"сегодня":Math.floor(d)+" дн. назад";}
+function renderProfiles(){
+  const el=$("ptable");if(!el)return;
+  if(!P.length){el.innerHTML=`<tr><td class="muted">Профилей пока нет — вставьте ссылку выше или нажмите ☆ Следить у любого ролика.</td></tr>`;return;}
+  el.innerHTML=`<tr><th>Профиль</th><th>Площадка</th><th>Подписчики</th><th>Роликов</th><th>Медиана просм.</th><th>Лучший ×</th><th>Выстрелов</th><th>Новых</th><th>Обновлён</th><th>Статус</th><th></th></tr>`+
+   P.map((p,i)=>`<tr><td><a href="${e(p.url)}" target="_blank" rel="noopener"><b>@${e(p.handle)}</b></a>${p.name&&p.name!==p.handle?`<br><span class="muted" style="font-size:12px">${e(p.name)}</span>`:""}</td>
+   <td>${e(p.platform)}</td><td>${n(p.followers)}</td><td>${p.reels??"—"}</td><td>${n(p.median_views)}</td><td>${p.best_x?"×"+(+p.best_x).toFixed(1):"—"}</td>
+   <td><b style="color:var(--acc)">${p.shots??"—"}</b></td><td>${p.new_last??"—"}</td><td>${ago(p.last_run)}</td><td class="muted">${e(p.status||"")}</td>
+   <td style="white-space:nowrap"><button class="btn" onclick="toProfile(${i})">Ролики</button> <button class="btn" id="del_${i}" onclick="delProfile(${i},this)">Удалить</button></td></tr>`).join("");
+}
+async function addProfile(){
+  const v=$("padd").value.trim();if(!v)return;$("pmsg").textContent="Добавляю…";
+  const r=await api("/api/profiles",{input:v});
+  if(r.ok){$("padd").value="";$("pmsg").textContent=r.existed?"Уже в списке":"Добавлено. Ролики появятся после ближайшего обновления — или нажмите «Обновить сейчас».";await loadProfiles();}
+  else $("pmsg").textContent=r.error||"Ошибка";
+}
+async function delProfile(i,btn){
+  const p=P[i];
+  if(!btn.dataset.sure){btn.dataset.sure=1;btn.textContent="Точно удалить?";btn.style.borderColor="var(--bad)";btn.style.color="var(--bad)";setTimeout(()=>{if(btn.isConnected){delete btn.dataset.sure;btn.textContent="Удалить";btn.style.borderColor="";btn.style.color="";}},4000);return;}
+  await api("/api/profiles/delete",{id:p.id});toast("Профиль удалён из слежки");await loadProfiles();
+}
+function toProfile(i){const p=P[i];document.querySelector('.nav button[data-v="videos"]').click();F.src="profile";$("q").value=p.handle;$("fs").value="";F.queue="all";renderQueues();renderList();}
+async function follow(){
+  const c=cur();if(!c)return;const k=authorKey(c.platform,c.author_id,c.author);
+  const ex=P.find(p=>p.id===k);
+  if(ex){await api("/api/profiles/delete",{id:k});toast("Убран из профилей");}
+  else{const handle=(c.author_id&&!/^(ig|tt|yt):/.test(c.author_id)?c.author_id.slice(3):c.author);
+    const r=await api("/api/profiles",{platform:c.platform,handle,name:c.author});toast(r.ok?"Добавлен в профили — обновится в ближайший запуск":(r.error||"Ошибка"));}
+  await loadProfiles();const b=$("starB");if(b){const t=isTracked(c);b.classList.toggle("on",t);b.textContent=t?"★ В профилях":"☆ Следить";}
+}
+async function followAuthor(i){const a=window._alist[i];const r=await api("/api/profiles",{platform:a.platform,handle:a.id.slice(3),name:a.handle});toast(r.ok?"Добавлен в профили":(r.error||"Ошибка"));await loadProfiles();renderAuthors();}
 function renderAuthors(){
   const q=$("aq").value.toLowerCase(),ap=$("ap").value,rel=$("arel").value==="1";
   const r=A.filter(a=>(!q||(a.handle||"").toLowerCase().includes(q))&&(!ap||a.platform===ap)&&(!rel||(a.relevant_shots||0)>0));
   $("atable").innerHTML=`<tr><th>Страница</th><th>Площадка</th><th>Подписчики</th><th>Выстрелов</th><th>По теме</th><th>Макс. просмотры</th><th>Лучший балл</th><th>Тип</th><th>Язык</th><th></th></tr>`+
-   r.map((a,i)=>`<tr><td><a href="${e(a.url)}" target="_blank" rel="noopener"><b>@${e(a.handle)}</b></a></td><td>${e(a.platform)}</td><td>${n(a.followers)}</td><td>${a.shots||0}</td><td><b style="color:var(--acc)">${a.relevant_shots||0}</b></td><td>${n(a.max_views)}</td><td>${a.best_score?`<span class="tag s${a.best_score}">${a.best_score}/5</span>`:"—"}</td><td>${e((a.main_type||"").replace(/_/g," "))}</td><td>${e(a.lang||"")}</td><td><button class="btn" onclick="toAuthor(${i})">Ролики</button></td></tr>`).join("");
+   r.map((a,i)=>`<tr><td><a href="${e(a.url)}" target="_blank" rel="noopener"><b>@${e(a.handle)}</b></a></td><td>${e(a.platform)}</td><td>${n(a.followers)}</td><td>${a.shots||0}</td><td><b style="color:var(--acc)">${a.relevant_shots||0}</b></td><td>${n(a.max_views)}</td><td>${a.best_score?`<span class="tag s${a.best_score}">${a.best_score}/5</span>`:"—"}</td><td>${e((a.main_type||"").replace(/_/g," "))}</td><td>${e(a.lang||"")}</td><td style="white-space:nowrap"><button class="btn" onclick="toAuthor(${i})">Ролики</button> ${P.some(p=>p.id===authorKey(a.platform,a.id,a.handle))?'<span style="color:var(--mid)">★</span>':`<button class="btn" onclick="followAuthor(${i})">☆ Следить</button>`}</td></tr>`).join("");
   window._alist=r;
 }
 function toAuthor(i){const h=window._alist[i].handle;document.querySelector('.nav button[data-v="videos"]').click();showAuthor(h);}
@@ -417,7 +481,7 @@ async function runNow(mode){$("runmsg").textContent="Запускаю…";const 
 
 async function start(){
   try{V=(await api("/api/videos")).videos||[];}catch(err){return;}
-  $("app").style.display="block"; buildSide(); renderList();
+  $("app").style.display="block"; buildSide(); renderList(); loadProfiles();
   if(LIST[0])select(LIST[0].id,false);
 }
 start();

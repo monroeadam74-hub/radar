@@ -70,6 +70,10 @@ SCHEMA = [
     "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS labels (id TEXT PRIMARY KEY, v TEXT, note TEXT, hidden INTEGER DEFAULT 0, ts TEXT)",
     "CREATE TABLE IF NOT EXISTS thumbs (id TEXT PRIMARY KEY, mime TEXT, data TEXT, ts TEXT)",
+    """CREATE TABLE IF NOT EXISTS profiles (
+        id TEXT PRIMARY KEY, platform TEXT, handle TEXT, name TEXT, url TEXT, followers INTEGER,
+        reels INTEGER, median_views INTEGER, best_x REAL, shots INTEGER, new_last INTEGER,
+        status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1)""",
     "CREATE INDEX IF NOT EXISTS i_snap ON snapshots(video_id)",
     "CREATE INDEX IF NOT EXISTS i_vid_author ON videos(author_id)",
 ]
@@ -333,7 +337,7 @@ def clean_subs(subs, dur):
 
 def analyze(c, video_bytes=None):
     from google.genai import types
-    v = CFG["verticals"][c["vertical"]]
+    v = CFG["verticals"].get(c["vertical"]) or PROFILE_VERTICAL
     prompt = ANALYSIS.format(vname=v.get("name", c["vertical"]), scale=v.get("nutra_scale", ""), dur=c.get("duration") or 60)
     if c["platform"] == "YouTube":
         part = types.Part(file_data=types.FileData(file_uri=f"https://www.youtube.com/watch?v={c['raw_id']}"))
@@ -364,6 +368,10 @@ def upsert_video(db, c, status, pre=None, a=None):
              [c["id"], c["platform"], c["vertical"], c.get("url"), c.get("author"), c.get("author_id"), (c.get("title") or "")[:500],
               c.get("published"), c.get("duration"), c.get("lang"), c.get("keyword"), c["views"], c.get("likes"),
               c.get("comments"), c.get("shares"), f, outlier, status, pre, None, None, None, None, ts, ts])
+        if c.get("source"):
+            db.q("UPDATE videos SET source=? WHERE id=?", [c["source"], c["id"]])
+    if c.get("vs_median") is not None:
+        db.q("UPDATE videos SET vs_median=? WHERE id=?", [c["vs_median"], c["id"]])
     if a is not None:
         a2 = {k: v for k, v in a.items() if k != "subtitles"}
         db.q("UPDATE videos SET status=?, nutra_score=?, content_type=?, analysis=?, subtitles=?, lang=COALESCE(NULLIF(?, ''), lang) WHERE id=?",
@@ -450,6 +458,242 @@ def report(db, new_ids, stats):
         lines += [f"@{esc(a['handle'])} · {a['platform']} · выстрелов по теме {a['relevant_shots']} · подписчиков {a['followers'] or '?'}"
                   for a in top_auth]
     telegram("\n".join(lines))
+
+
+# ------------------------------------------------------------------ ПРОФИЛИ (слежка за аккаунтами)
+PROFILE_VERTICAL = {
+    "name": "Здоровье (профили)",
+    "nutra_scale": "5 = тема и подача легко ведут зрителя 45+ к добавке (суставы, похудение, мужское здоровье, энергия, сон, ЖКТ); "
+                   "4 = здоровье/долголетие, мост к добавке очевиден; 3 = общий велнес, мост возможен; 2 = здоровье, но мост натянутый; "
+                   "1 = не про здоровье или мост невозможен",
+}
+UA = {"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"}
+
+
+def save_thumb(db, vid, src):
+    """Скачать обложку по временной ссылке и сохранить уменьшенную копию в базу."""
+    import base64, io
+    if not src or db.q("SELECT id FROM thumbs WHERE id=?", [vid]):
+        return
+    try:
+        r = requests.get(src, headers=UA, timeout=30)
+        r.raise_for_status()
+        data, mime = r.content, r.headers.get("content-type", "image/jpeg")
+        try:
+            from PIL import Image
+            im = Image.open(io.BytesIO(data)).convert("RGB")
+            im.thumbnail((360, 640))
+            buf = io.BytesIO(); im.save(buf, "JPEG", quality=72); data, mime = buf.getvalue(), "image/jpeg"
+        except Exception:
+            pass
+        if len(data) <= 70000:
+            db.q("INSERT OR REPLACE INTO thumbs VALUES (?,?,?,?)", [vid, mime, base64.b64encode(data).decode(), NOW.isoformat(timespec="seconds")])
+    except Exception as e:
+        log(f"  обложка {vid}: {str(e)[:100]}")
+
+
+def _ts(v):
+    if isinstance(v, (int, float)):
+        return dt.datetime.fromtimestamp(v, dt.timezone.utc).strftime("%Y-%m-%d")
+    return str(v)[:10] if v else None
+
+
+def profile_instagram(p):
+    items = run_actor(S.get("ig_actor", "apify/instagram-reel-scraper"),
+                      {"username": [p["handle"]], "resultsLimit": int(S.get("profile_reels", 30))})
+    out = []
+    for it in items:
+        code = g(it, "shortCode", "shortcode", "code")
+        if not code or g(it, "error"):
+            continue
+        views = g(it, "videoPlayCount", "playCount", "play_count", "videoViewCount", "viewCount") or 0
+        out.append(dict(id="ig_" + code, raw_id=code, platform="Instagram",
+            url=g(it, "url") or f"https://www.instagram.com/reel/{code}/", author=g(it, "ownerUsername", "username") or p["handle"],
+            title=g(it, "caption", "text") or "", published=_ts(g(it, "timestamp", "taken_at")),
+            duration=g(it, "videoDuration", "video_duration"), lang="", views=int(views),
+            likes=g(it, "likesCount", "like_count"), comments=g(it, "commentsCount", "comment_count"), shares=None,
+            followers=g(it, "ownerFollowersCount", "followersCount"), video_url=g(it, "videoUrl", "video_url"),
+            thumb=g(it, "displayUrl", "thumbnailUrl", "thumbnail_url", "images.0")))
+    return out
+
+
+def profile_tiktok(p):
+    items = run_actor(CFG.get("tiktok_download_actor", "clockworks/tiktok-scraper"),
+                      {"profiles": [p["handle"]], "resultsPerPage": int(S.get("profile_reels", 30)),
+                       "profileSorting": "latest", "shouldDownloadVideos": False, "shouldDownloadCovers": False})
+    out = []
+    for it in items:
+        vid = str(g(it, "id") or "")
+        if not vid.isdigit():
+            continue
+        user = g(it, "authorMeta.name") or p["handle"]
+        out.append(dict(id="tt_" + vid, raw_id=vid, platform="TikTok", url=g(it, "webVideoUrl") or f"https://www.tiktok.com/@{user}/video/{vid}",
+            author=user, title=g(it, "text") or "", published=_ts(g(it, "createTime", "createTimeISO")),
+            duration=g(it, "videoMeta.duration"), lang="", views=int(g(it, "playCount") or 0), likes=g(it, "diggCount"),
+            comments=g(it, "commentCount"), shares=g(it, "shareCount"), followers=g(it, "authorMeta.fans")))
+    return out
+
+
+def profile_youtube(p):
+    key = ENV("YOUTUBE_KEY")
+    YT = "https://www.googleapis.com/youtube/v3/"
+    h = p["handle"]
+    if h.startswith("UC") and len(h) == 24:
+        q = dict(id=h)
+    else:
+        q = dict(forHandle="@" + h.lstrip("@"))
+    r = requests.get(YT + "channels", params=dict(key=key, part="snippet,statistics,contentDetails", **q), timeout=60).json()
+    if not r.get("items") and "forHandle" in q:
+        s = requests.get(YT + "search", params=dict(key=key, part="snippet", q=h, type="channel", maxResults=1), timeout=60).json()
+        cid = (s.get("items") or [{}])[0].get("id", {}).get("channelId")
+        if cid:
+            r = requests.get(YT + "channels", params=dict(key=key, part="snippet,statistics,contentDetails", id=cid), timeout=60).json()
+    if not r.get("items"):
+        return []
+    ch = r["items"][0]
+    subs = int(ch["statistics"].get("subscriberCount", 0) or 0)
+    up = ch["contentDetails"]["relatedPlaylists"]["uploads"]
+    pl = requests.get(YT + "playlistItems", params=dict(key=key, part="contentDetails", playlistId=up, maxResults=50), timeout=60).json()
+    ids = [x["contentDetails"]["videoId"] for x in pl.get("items", [])]
+    out = []
+    if ids:
+        vr = requests.get(YT + "videos", params=dict(key=key, part="snippet,statistics,contentDetails", id=",".join(ids)), timeout=60).json()
+        for v in vr.get("items", []):
+            d = iso_dur(v["contentDetails"]["duration"])
+            if d > S["max_duration_sec"]:
+                continue
+            st, sn = v.get("statistics", {}), v["snippet"]
+            out.append(dict(id="yt_" + v["id"], raw_id=v["id"], platform="YouTube", url=f"https://www.youtube.com/shorts/{v['id']}",
+                author=sn["channelTitle"], title=(sn.get("title") or "") + " " + (sn.get("description") or "")[:300],
+                published=sn["publishedAt"][:10], duration=d, lang=(sn.get("defaultAudioLanguage") or "").lower(),
+                views=int(st.get("viewCount", 0) or 0), likes=int(st.get("likeCount", 0) or 0),
+                comments=int(st.get("commentCount", 0) or 0), shares=None, followers=subs))
+    p["name"] = ch["snippet"]["title"]
+    p["channel_id"] = ch["id"]
+    return out[: int(S.get("profile_reels", 30))]
+
+
+def fetch_bytes(url):
+    try:
+        r = requests.get(url, headers=UA, timeout=120)
+        if r.ok and len(r.content) > 50_000:
+            return r.content
+    except Exception:
+        pass
+    return None
+
+
+PROFILE_URL = {"Instagram": "https://www.instagram.com/{h}/", "TikTok": "https://www.tiktok.com/@{h}",
+               "YouTube": "https://www.youtube.com/@{h}"}
+
+
+def add_profile(db, platform, handle):
+    handle = handle.strip().lstrip("@").strip("/")
+    pid = f"{ {'Instagram': 'ig', 'TikTok': 'tt', 'YouTube': 'yt'}[platform]}:{handle.lower()}"
+    if db.q("SELECT id FROM profiles WHERE id=?", [pid]):
+        return
+    url = PROFILE_URL[platform].format(h=handle)
+    if platform == "YouTube" and handle.startswith("UC"):
+        url = f"https://www.youtube.com/channel/{handle}"
+    db.q("INSERT INTO profiles (id, platform, handle, url, added, active) VALUES (?,?,?,?,?,1)",
+         [pid, platform, handle, url, NOW.isoformat(timespec="seconds")])
+
+
+def seed_profiles(db):
+    """Стартовый список из config.yaml — один раз, дальше профили правятся в интерфейсе."""
+    if db.q("SELECT v FROM kv WHERE k='profiles_seeded'"):
+        return
+    for line in CFG.get("seed_profiles", []) or []:
+        plat, h = line.split(None, 1)
+        add_profile(db, {"instagram": "Instagram", "tiktok": "TikTok", "youtube": "YouTube"}[plat.lower()], h)
+    db.q("INSERT OR REPLACE INTO kv VALUES ('profiles_seeded', '1')")
+
+
+def run_profiles(db):
+    """Слежка за профилями: последние ролики → медиана → разбор выстрелов (топ при добавлении, дальше ≥ N× медианы)."""
+    seed_profiles(db)
+    profs = db.q("SELECT * FROM profiles WHERE COALESCE(active,1)=1 ORDER BY added")
+    log(f"Профилей на слежке: {len(profs)}")
+    budget = int(S.get("profile_max_analyze", 60))
+    top_first, x_min = int(S.get("profile_top_first", 5)), float(S.get("profile_outlier_min", 2))
+    hidden = {r["id"] for r in db.q("SELECT id FROM labels WHERE hidden=1")}
+    found, new_ids, analyzed, all_c = 0, set(), 0, []
+    for p in profs:
+        first = not p.get("last_run")
+        try:
+            fn = {"Instagram": profile_instagram, "TikTok": profile_tiktok, "YouTube": profile_youtube}[p["platform"]]
+            if p["platform"] != "YouTube" and not ENV("APIFY_TOKEN"):
+                log("  нет токена Apify, пропуск", p["id"]); continue
+            cands = fn(p)
+        except Exception as e:
+            log(f"  {p['id']}: ошибка сбора {str(e)[:200]}")
+            db.q("UPDATE profiles SET status=?, last_run=? WHERE id=?", ["ошибка сбора", NOW.isoformat(timespec="seconds"), p["id"]])
+            continue
+        if not cands:
+            log(f"  {p['id']}: роликов нет (профиль удалён, закрыт или пуст)")
+            db.q("UPDATE profiles SET status=?, last_run=? WHERE id=?", ["нет роликов", NOW.isoformat(timespec="seconds"), p["id"]])
+            continue
+        views = sorted(c["views"] for c in cands)
+        med = views[len(views) // 2] or 1
+        fol = next((c["followers"] for c in cands if c.get("followers")), None) or p.get("followers")
+        known = {r["id"] for r in db.q("SELECT id FROM videos WHERE id IN (%s)" % ",".join("?" * len(cands)), [c["id"] for c in cands])}
+        for c in cands:
+            c.update(vertical="profiles", source="profile", keyword="профиль @" + p["handle"],
+                     author_id=p["id"], author_url=p["url"], vs_median=round(c["views"] / med, 1))
+            if fol and not c.get("followers"):
+                c["followers"] = fol
+        fresh = [c for c in cands if c["id"] not in known]
+        found += len(cands)
+        # что разбираем
+        if first:
+            pick = sorted(cands, key=lambda c: c["views"], reverse=True)[:top_first]
+        else:
+            pick = [c for c in fresh if c["vs_median"] >= x_min]
+        pick_ids = {c["id"] for c in pick}
+        for c in cands:
+            if c["id"] in known:
+                upsert_video(db, c, None)
+            else:
+                upsert_video(db, c, "queued" if c["id"] in pick_ids else "profile_rest")
+                new_ids.add(c["id"])
+            if c.get("thumb"):
+                save_thumb(db, c["id"], c["thumb"])
+        pick_ids = {c["id"] for c in pick}
+        pick += [c for c in cands if c["id"] in known and c["id"] not in pick_ids and
+                 (db.q("SELECT status FROM videos WHERE id=?", [c["id"]]) or [{}])[0].get("status") == "queued"]
+        pick = [c for c in pick if c["id"] not in hidden and
+                (db.q("SELECT status FROM videos WHERE id=?", [c["id"]]) or [{}])[0].get("status") != "analyzed"]
+        pick = pick[:max(0, budget - analyzed)]
+        files = {}
+        if p["platform"] == "TikTok" and pick and S.get("analyze_tiktok", True):
+            files = {k: v[0] for k, v in tiktok_download(pick).items()}
+        n_ok = 0
+        for c in pick:
+            vb = None
+            if c["platform"] == "Instagram":
+                vb = fetch_bytes(c.get("video_url")) if c.get("video_url") else None
+                if not vb:
+                    log(f"  {c['id']}: видео не скачалось"); continue
+            elif c["platform"] == "TikTok":
+                vb = files.get(c["raw_id"])
+                if not vb:
+                    continue
+            a = analyze(c, vb)
+            if a:
+                upsert_video(db, c, "analyzed", a=a)
+                new_ids.add(c["id"]); analyzed += 1; n_ok += 1
+                log(f"  ✓ {c['platform']} @{c['author']} {c['views']:,} (×{c['vs_median']} к медиане) → {a.get('nutra_score')}/5")
+            time.sleep(2)
+        shots = sum(1 for c in cands if c["vs_median"] >= x_min)
+        db.q("""UPDATE profiles SET name=COALESCE(?, name), followers=COALESCE(?, followers), reels=?, median_views=?, best_x=?,
+                shots=?, new_last=?, status=?, last_run=? WHERE id=?""",
+             [p.get("name"), fol, len(cands), med, max(c["vs_median"] for c in cands), shots, len(fresh),
+              f"ок: разобрано {n_ok}", NOW.isoformat(timespec="seconds"), p["id"]])
+        log(f"  {p['id']}: роликов {len(cands)}, новых {len(fresh)}, медиана {med:,}, на разбор {len(pick)}, разобрано {n_ok}")
+        all_c += cands
+    if all_c:
+        refresh_authors(db, all_c)
+    return dict(found=found, new=len(new_ids), analyzed=analyzed, new_ids=new_ids)
 
 
 # ------------------------------------------------------------------ ГЛАВНОЕ
@@ -555,18 +799,34 @@ def main():
     db = DB()
     for s in SCHEMA:
         db.q(s)
-    try:
-        db.q("ALTER TABLE labels ADD COLUMN reason TEXT")
-    except Exception:
-        pass
+    for alter in ("ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
+                  "ALTER TABLE videos ADD COLUMN vs_median REAL"):
+        try:
+            db.q(alter)
+        except Exception:
+            pass
     load_settings(db)
     if ENV("RADAR_MODE") == "thumbs":
         tiktok_thumbs(db)
         db_size(db)
         return
+    if ENV("RADAR_MODE") == "profiles":
+        stats = run_profiles(db)
+        try:
+            tiktok_thumbs(db)
+        except Exception as e:
+            log("Обложки TikTok: ошибка", str(e)[:200])
+        cost = GEM["tin"] / 1e6 * 0.25 + GEM["tout"] / 1e6 * 1.5
+        stats["cost"] = cost
+        db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), stats["found"], stats["new"],
+             stats["analyzed"], cost, "\n".join(LOG)[-20000:]])
+        report(db, stats.pop("new_ids"), stats)
+        db_size(db)
+        log("Готово (профили):", stats)
+        return
     # разобранные ролики не на нужном языке (определено при разборе) — в отсев
     langs = ",".join("'%s'" % l.replace("'", "") for l in S["langs"])
-    db.q(f"UPDATE videos SET status='skip_lang' WHERE status='analyzed' AND lang<>'' AND substr(lang,1,2) NOT IN ({langs})")
+    db.q(f"UPDATE videos SET status='skip_lang' WHERE status='analyzed' AND COALESCE(source,'search')<>'profile' AND lang<>'' AND substr(lang,1,2) NOT IN ({langs})")
     found, new_ids, analyzed = 0, set(), 0
     budget = S["max_analyze_per_run"]
     for vertical, v in CFG["verticals"].items():

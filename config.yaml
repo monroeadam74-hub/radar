@@ -15,6 +15,12 @@ settings:
   search_youtube: true      # искать новые Shorts
   search_tiktok: true       # искать новые TikTok (тратит Apify)
   analyze_tiktok: true      # разбирать TikTok (скачивание видео тратит Apify)
+  # --- профили (слежка за аккаунтами, обновление раз в 3 дня)
+  profile_reels: 30         # сколько последних роликов брать с профиля
+  profile_top_first: 5      # при добавлении профиля разобрать N самых просматриваемых
+  profile_outlier_min: 2    # дальше разбирать новые ролики с просмотрами >= N × медиана автора
+  profile_max_analyze: 60   # максимум разборов за запуск профилей
+  ig_actor: "apify/instagram-reel-scraper"
 
 verticals:
   joints:
@@ -51,3 +57,16 @@ verticals:
 #    keywords: [belly fat, lose weight after 40]
 #    nutra_scale: |
 #      5 = ...
+
+# стартовый список профилей (добавляется один раз; дальше — вкладка «Профили» на сайте)
+seed_profiles:
+  - instagram farmtruths
+  - instagram mingsanhealing
+  - instagram vega.naturalmed
+  - instagram amish.house1
+  - instagram nonnasofiahealth
+  - instagram shantivaidya.ayurveda
+  - instagram wellnesswithjacob1
+  - instagram mayalin_wellness
+  - instagram grandmatruth
+  - instagram herbalance_lab

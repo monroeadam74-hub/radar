@@ -4,6 +4,9 @@ const SCHEMA = [
   "CREATE TABLE IF NOT EXISTS labels (id TEXT PRIMARY KEY, v TEXT, note TEXT, hidden INTEGER DEFAULT 0, ts TEXT)",
   "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)",
   "CREATE TABLE IF NOT EXISTS thumbs (id TEXT PRIMARY KEY, mime TEXT, data TEXT, ts TEXT)",
+  `CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, platform TEXT, handle TEXT, name TEXT, url TEXT, followers INTEGER,
+     reels INTEGER, median_views INTEGER, best_x REAL, shots INTEGER, new_last INTEGER,
+     status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1)`,
 ];
 
 const json = (data, status = 200, headers = {}) =>
@@ -25,7 +28,10 @@ let ensured = false;
 async function ensure(env) {
   if (ensured) return;
   for (const s of SCHEMA) await env.DB.prepare(s).run();
-  try { await env.DB.prepare("ALTER TABLE labels ADD COLUMN reason TEXT").run(); } catch {}
+  for (const a of ["ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
+                   "ALTER TABLE videos ADD COLUMN vs_median REAL"]) {
+    try { await env.DB.prepare(a).run(); } catch {}
+  }
   ensured = true;
 }
 
@@ -53,7 +59,7 @@ async function api(req, env, url) {
       const r = await env.DB.prepare(
         `SELECT v.id, v.platform, v.vertical, v.url, v.author, v.author_id, v.title, v.published, v.duration, v.lang, v.keyword,
                 v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score,
-                v.content_type, v.analysis, v.subtitles, v.first_seen, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
+                v.content_type, v.analysis, v.subtitles, v.first_seen, v.source, v.vs_median, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
          FROM videos v LEFT JOIN labels l ON l.id = v.id ORDER BY v.views DESC LIMIT 3000`).all();
       rows = r.results || [];
     } catch (e) { return json({ videos: [], note: "Таблица videos ещё не создана — запустите сбор" }); }
@@ -64,9 +70,10 @@ async function api(req, env, url) {
   if (p === "/api/thumb") {
     // обложка TikTok: oEmbed по полной ссылке ролика -> сама картинка, кэш на неделю
     const vid = url.searchParams.get("id") || "";
-    const id = vid.replace(/^tt_/, "");
-    if (!/^\d+$/.test(id)) return new Response("bad id", { status: 400 });
-    const cache = caches.default, key = new Request(`https://thumb.cache/tt2/${id}`);
+    const isIG = /^ig_[A-Za-z0-9_-]+$/.test(vid);
+    const id = vid.replace(/^(tt|ig)_/, "");
+    if (!isIG && !/^tt_\d+$/.test(vid)) return new Response("bad id", { status: 400 });
+    const cache = caches.default, key = new Request(`https://thumb.cache/${isIG ? "ig" : "tt2"}/${id}`);
     const hit = await cache.match(key);
     if (hit) return hit;
     try {
@@ -78,6 +85,7 @@ async function api(req, env, url) {
         return res;
       }
     } catch {}
+    if (isIG) return new Response("no thumb", { status: 404, headers: { "cache-control": "no-store" } });
     let pageUrl = `https://www.tiktok.com/video/${id}`;
     try {
       const row = await env.DB.prepare("SELECT url, author FROM videos WHERE id=?").bind(vid).first();
@@ -145,10 +153,59 @@ async function api(req, env, url) {
     return json({ settings: parse(r && r.v, null) });
   }
 
+  if (p === "/api/profiles" && req.method === "GET") {
+    const r = await env.DB.prepare("SELECT * FROM profiles ORDER BY added").all();
+    return json({ profiles: r.results || [] });
+  }
+
+  if (p === "/api/profiles" && req.method === "POST") {
+    // добавить: { input: "ссылка или ник" } или { platform, handle }
+    const b = await req.json().catch(() => ({}));
+    let platform = b.platform, handle = (b.handle || "").trim();
+    const s = (b.input || "").trim();
+    if (s) {
+      let m;
+      if ((m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/i))) { platform = "Instagram"; handle = m[1]; }
+      else if ((m = s.match(/tiktok\.com\/@([A-Za-z0-9._]+)/i))) { platform = "TikTok"; handle = m[1]; }
+      else if ((m = s.match(/youtube\.com\/(?:channel\/)?(UC[A-Za-z0-9_-]{22})/i))) { platform = "YouTube"; handle = m[1]; }
+      else if ((m = s.match(/youtube\.com\/@([^/?#\s]+)/i))) { platform = "YouTube"; handle = decodeURIComponent(m[1]); }
+      else if ((m = s.match(/^(instagram|insta|ig|tiktok|tt|youtube|yt)\s+@?(.+)$/i))) {
+        platform = { instagram: "Instagram", insta: "Instagram", ig: "Instagram", tiktok: "TikTok", tt: "TikTok", youtube: "YouTube", yt: "YouTube" }[m[1].toLowerCase()];
+        handle = m[2].trim();
+      } else { platform = "Instagram"; handle = s; }
+    }
+    handle = handle.replace(/^@/, "").replace(/\/+$/, "");
+    if (!["Instagram", "TikTok", "YouTube"].includes(platform) || !handle || /\s/.test(handle) && platform !== "YouTube")
+      return json({ ok: false, error: "Не понял ссылку. Пример: instagram.com/farmtruths или tiktok.com/@user или youtube.com/@channel" }, 400);
+    const pid = `${{ Instagram: "ig", TikTok: "tt", YouTube: "yt" }[platform]}:${handle.toLowerCase()}`;
+    const purl = platform === "Instagram" ? `https://www.instagram.com/${handle}/` : platform === "TikTok" ? `https://www.tiktok.com/@${handle}`
+      : handle.startsWith("UC") ? `https://www.youtube.com/channel/${handle}` : `https://www.youtube.com/@${encodeURIComponent(handle)}`;
+    const ex = await env.DB.prepare("SELECT id, active FROM profiles WHERE id=?").bind(pid).first();
+    if (ex) {
+      await env.DB.prepare("UPDATE profiles SET active=1 WHERE id=?").bind(pid).run();
+      return json({ ok: true, id: pid, existed: true });
+    }
+    await env.DB.prepare("INSERT INTO profiles (id, platform, handle, name, url, added, active, status) VALUES (?,?,?,?,?,?,1,?)")
+      .bind(pid, platform, handle, b.name || null, purl, new Date().toISOString().slice(0, 19), "ждёт первого сбора").run();
+    return json({ ok: true, id: pid });
+  }
+
+  if (p === "/api/profiles/delete" && req.method === "POST") {
+    // удалить из слежки; ролики остаются в базе (если не попросили удалить и их)
+    const { id, withVideos } = await req.json().catch(() => ({}));
+    if (!id) return json({ ok: false, error: "id" }, 400);
+    await env.DB.prepare("DELETE FROM profiles WHERE id=?").bind(id).run();
+    if (withVideos) {
+      await env.DB.prepare("DELETE FROM thumbs WHERE id IN (SELECT id FROM videos WHERE author_id=? AND source='profile')").bind(id).run();
+      await env.DB.prepare("DELETE FROM videos WHERE author_id=? AND source='profile'").bind(id).run();
+    }
+    return json({ ok: true });
+  }
+
   if (p === "/api/run" && req.method === "POST") {
     if (!env.GH_TOKEN || !env.GH_REPO) return json({ ok: false, error: "Не настроен GH_TOKEN / GH_REPO" }, 400);
     const opts = await req.json().catch(() => ({}));
-    const mode = opts.mode === "full" ? "full" : "analyze";
+    const mode = ["full", "profiles"].includes(opts.mode) ? opts.mode : "analyze";
     const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/workflows/radar.yml/dispatches`, {
       method: "POST",
       headers: { authorization: `Bearer ${env.GH_TOKEN}`, accept: "application/vnd.github+json", "user-agent": "radar-worker" },
