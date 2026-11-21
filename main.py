@@ -502,13 +502,14 @@ def _ig_item(it, handle=None):
     code = g(it, "shortCode", "shortcode", "code")
     if not code or g(it, "error"):
         return None
-    views = g(it, "videoPlayCount", "playCount", "play_count", "videoViewCount", "viewCount") or 0
+    views = g(it, "videoPlayCount", "playCount", "play_count", "plays", "videoViewCount", "viewCount", "view_count") or 0
     return dict(id="ig_" + code, raw_id=code, platform="Instagram",
-        url=g(it, "url") or f"https://www.instagram.com/reel/{code}/", author=g(it, "ownerUsername", "username") or handle,
-        title=g(it, "caption", "text") or "", published=_ts(g(it, "timestamp", "taken_at")),
-        duration=g(it, "videoDuration", "video_duration"), lang="", views=int(views),
-        likes=g(it, "likesCount", "like_count"), comments=g(it, "commentsCount", "comment_count"), shares=None,
-        followers=g(it, "ownerFollowersCount", "followersCount"), video_url=g(it, "videoUrl", "video_url"),
+        url=g(it, "url") or f"https://www.instagram.com/reel/{code}/",
+        author=g(it, "ownerUsername", "authorUsername", "username", "owner.username", "user.username") or handle,
+        title=g(it, "caption", "text", "caption.text") or "", published=_ts(g(it, "timestamp", "createdAt", "taken_at", "takenAt")),
+        duration=g(it, "videoDuration", "durationSeconds", "video_duration"), lang="", views=int(views),
+        likes=g(it, "likesCount", "likeCount", "like_count"), comments=g(it, "commentsCount", "commentCount", "comment_count"), shares=None,
+        followers=g(it, "ownerFollowersCount", "authorFollowerCount", "followersCount"), video_url=g(it, "videoUrl", "video_url"),
         thumb=g(it, "displayUrl", "thumbnailUrl", "thumbnail_url", "images.0"))
 
 
@@ -530,9 +531,9 @@ def fetch_instagram(profs, limit, since=None):
         actors = [S.get("ig_actor", "scrapesmith/instagram-reels-scraper")]
         items = []
     for actor in actors:
-        inp = ({"username": handles, "resultsLimit": int(limit)} if actor.startswith("apify/") else
-               {"usernames": handles, "resultsLimit": int(limit), "skipPinnedPosts": False,
-                **({"onlyPostsNewerThan": since} if since else {})})
+        inp = IG_ACTOR_INPUT.get(actor, IG_ACTOR_INPUT["scrapesmith/instagram-reels-scraper"])(handles, int(limit))
+        if since and not actor.startswith("apify/"):
+            inp["onlyPostsNewerThan"] = since
         try:
             items = run_actor(actor, inp)
         except Exception as e:
@@ -581,28 +582,42 @@ def import_run_items(run_id):
     return items
 
 
+IG_ACTOR_INPUT = {   # как каждый сборщик принимает список профилей
+    "apify/instagram-reel-scraper": lambda hs, n: {"username": hs, "resultsLimit": n},
+    "scrapesmith/instagram-reels-scraper": lambda hs, n: {"usernames": hs, "resultsLimit": n, "skipPinnedPosts": False},
+    "memo23/instagram-reel-scraper": lambda hs, n: {"usernames": hs, "resultsLimit": n, "skipPinnedPosts": False},
+    "zaver.api/instagram-reel-scraper": lambda hs, n: {"directUrls": hs, "resultsLimit": n},
+}
+
+
 def ig_test():
-    """Проверка дешёвого сборщика: 1 профиль, 5 роликов (~$0.01) + хвост журнала Apify."""
+    """Проверка сборщиков: 1 профиль, 5 роликов (~$0.01 каждый). RADAR_IGTEST='актор1,актор2'."""
     ac = apify()
-    actor = S.get("ig_actor", "scrapesmith/instagram-reels-scraper")
-    for inp in ({"usernames": ["farmtruths"], "resultsLimit": 5},):
-        log(f"Тест {actor} вход {inp}")
-        run = ac.actor(actor).call(run_input=inp)
-        items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
-        log(f"  статус {_f(run, 'status')} · строк {len(items)} · распознано роликов {sum(1 for it in items if _ig_item(it))}")
-        if items:
-            log("  поля первой строки:", sorted(items[0].keys())[:60])
-            log("  пример:", {k: items[0].get(k) for k in ("shortCode", "videoPlayCount", "ownerUsername", "inputUrl", "timestamp", "error", "errorDescription")})
+    actors = [a.strip() for a in (ENV("RADAR_IGTEST") or "memo23/instagram-reel-scraper,zaver.api/instagram-reel-scraper").split(",") if a.strip()]
+    for actor in actors:
+        inp = IG_ACTOR_INPUT.get(actor, IG_ACTOR_INPUT["scrapesmith/instagram-reels-scraper"])(["farmtruths"], 5)
+        log(f"\n===== Тест {actor} вход {inp}")
         try:
-            log("  журнал Apify (хвост):\n" + (ac.run(_f(run, "id")).log().get() or "")[-2500:])
+            run = ac.actor(actor).call(run_input=inp)
+        except Exception as e:
+            log("  запуск не удался:", str(e)[:300]); continue
+        items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        ok = [c for c in (_ig_item(it) for it in items) if c]
+        log(f"  статус {_f(run, 'status')} · строк {len(items)} · распознано роликов {len(ok)}")
+        if items:
+            it = items[0]
+            log("  ВСЕ ПОЛЯ первой строки:")
+            for k in sorted(it.keys()):
+                v = it[k]
+                log(f"    {k}: {str(v)[:90]}")
+        if ok:
+            c = ok[0]
+            log("  как понял радар:", {k: (str(c.get(k))[:60] if c.get(k) is not None else None) for k in
+                ("id", "views", "likes", "comments", "followers", "published", "duration", "author", "video_url", "thumb")})
+        try:
+            log("  журнал Apify (хвост):\n" + (ac.run(_f(run, "id")).log().get() or "")[-1200:])
         except Exception as e:
             log("  журнал недоступен:", e)
-    for r in _f(ac.actor(actor).runs().list(desc=True, limit=5), "items") or []:
-        log(f"  прошлый запуск {_f(r, 'id')} {_f(r, 'status')} {_f(r, 'startedAt', 'started_at')}")
-        try:
-            log("    хвост журнала:\n" + (ac.run(_f(r, "id")).log().get() or "")[-1500:])
-        except Exception:
-            pass
 
 
 def fetch_tiktok(profs, limit):

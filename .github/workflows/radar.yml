@@ -12,6 +12,9 @@ on:
       import_run:
         description: "Профили: взять данные уже оплаченного запуска Apify (ID или last) вместо нового сбора"
         default: ""
+      igtest:
+        description: "Тест сборщиков Instagram (через запятую)"
+        default: ""
       max_analyze:
         description: "Сколько роликов разобрать за запуск (пусто = из настроек)"
         default: ""
@@ -38,6 +41,7 @@ jobs:
           RADAR_MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'profiles') || 'full' }}
           RADAR_MAX_ANALYZE: ${{ inputs.max_analyze }}
           RADAR_IMPORT_RUN: ${{ inputs.import_run }}
+          RADAR_IGTEST: ${{ inputs.igtest }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
