@@ -2179,6 +2179,16 @@ def main():
         log("Профили:", [(p["id"], p.get("reels"), p.get("deep"), p.get("status")) for p in db.q("SELECT * FROM profiles")])
         ig_test()
         return
+    if ENV("RADAR_MODE") == "quota":   # проверка лимитов: один короткий запрос к каждой модели, полный текст ошибки
+        from google.genai import types
+        c = gemini()
+        for mdl in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite"):
+            try:
+                r = c.models.generate_content(model=mdl, contents="Say OK")
+                log(f"QUOTA {mdl}: ok {(r.text or '')[:20]}")
+            except Exception as e:
+                log(f"QUOTA {mdl}: {str(e)[:1500]}")
+        return
     if ENV("RADAR_MODE") == "wave":
         stats = run_wave(db)
         db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), stats["found"], stats["new"],
