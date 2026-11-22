@@ -249,10 +249,10 @@ class QuotaDay(Exception):
     """Дневной лимит модели исчерпан."""
 
 
-def ask_model(contents, label, model):
+def ask_model(contents, label, model, client=None):
     """Один вызов конкретной модели (без запасных). 429 «в день» → QuotaDay; 429 «в минуту» и 503 → пауза и повтор."""
     from google.genai import types
-    c = gemini()
+    c = client or gemini()
     for attempt in range(6):
         try:
             r = c.models.generate_content(model=model, contents=contents,
@@ -538,7 +538,7 @@ def clean_subs(subs, dur):
     return out
 
 
-def analyze(c, video_bytes=None, model=None):
+def analyze(c, video_bytes=None, model=None, client=None):
     from google.genai import types
     v = CFG["verticals"].get(c["vertical"]) or PROFILE_VERTICAL
     prompt = ANALYSIS.format(vname=v.get("name", c["vertical"]), scale=v.get("nutra_scale", ""), dur=c.get("duration") or 60,
@@ -547,7 +547,7 @@ def analyze(c, video_bytes=None, model=None):
         part = types.Part(file_data=types.FileData(file_uri=f"https://www.youtube.com/watch?v={c['raw_id']}"))
     else:
         part = types.Part.from_bytes(data=video_bytes, mime_type="video/mp4")
-    data = ask_model([part, prompt], c["id"], model) if model else ask([part, prompt], c["id"])
+    data = ask_model([part, prompt], c["id"], model, client) if model else ask([part, prompt], c["id"])
     if isinstance(data, list):
         data = next((x for x in data if isinstance(x, dict)), None)
     if not isinstance(data, dict):
@@ -1837,9 +1837,9 @@ def run_wave(db):
     from concurrent.futures import ThreadPoolExecutor
     import threading
     t0 = time.time()
-    size = int(ENV("RADAR_WAVE") or S.get("wave_size", 25))
+    size = int(ENV("RADAR_WAVE") or S.get("wave_size", 50 if ENV("GEMINI_KEY_PAID") else 25))
     reels = int(S.get("wave_reels", 300))
-    budget = float(ENV("RADAR_BUDGET") or 0) or float(S.get("wave_budget", 12))
+    budget = float(ENV("RADAR_BUDGET") or 0) or float(S.get("wave_budget", 20))
     m_cls = S.get("wave_cls_model", "gemini-3.1-flash-lite")
     m_txt = S.get("wave_txt_model", "gemini-3.5-flash-lite")
     max_min = float(S.get("wave_max_minutes", 300))
@@ -1877,7 +1877,20 @@ def run_wave(db):
 
     # 2) очередь двух моделей: что ещё не сделано каждой
     done = {}   # id → (base analysis, set of done roles)
-    state = {"cls": {"model": m_cls, "off": None, "n": 0}, "txt": {"model": m_txt, "off": None, "n": 0}}
+    state = {"cls": {"model": m_cls, "off": None, "n": 0, "client": None}, "txt": {"model": m_txt, "off": None, "n": 0, "client": None}}
+    # платный ключ (отдельный проект Google с оплатой) — только для модели-классификатора; 3.5 остаётся на бесплатном
+    paid_cap = float(S.get("wave_paid_usd", 35))
+    paid_max = int(paid_cap / 0.0025)        # потолок по числу разборов (оценка сверху ~$0.0025 за разбор 3.1)
+    if ENV("GEMINI_KEY_PAID"):
+        from google import genai
+        from google.genai import types as _t
+        state["cls"]["client"] = genai.Client(api_key=ENV("GEMINI_KEY_PAID"), http_options=_t.HttpOptions(timeout=120_000))
+        paid_used = int((db.q("SELECT v FROM kv WHERE k='paid_cls_n'") or [{"v": "0"}])[0]["v"] or 0)
+        log(f"3.1 на платном ключе: использовано {paid_used} из {paid_max} разборов (потолок ${paid_cap})")
+        if paid_used >= paid_max:
+            state["cls"]["off"] = {"at": NOW.isoformat(timespec="seconds"), "after": 0, "msg": "потолок трат платного ключа"}
+    else:
+        paid_used = None
     lock = threading.Lock()
     J["errors"] = 0
 
@@ -1900,8 +1913,15 @@ def run_wave(db):
         for role in left:
             if state[role]["off"]:
                 continue
+            if role == "cls" and paid_used is not None and paid_used + state["cls"]["n"] >= paid_max:
+                with lock:
+                    if not state["cls"]["off"]:
+                        state["cls"]["off"] = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                                               "after": state["cls"]["n"], "msg": f"потолок трат ${paid_cap}"}
+                        log(f"  ⛔ 3.1: достигнут потолок трат ${paid_cap}")
+                continue
             try:
-                a = analyze(c, vb, model=state[role]["model"])
+                a = analyze(c, vb, model=state[role]["model"], client=state[role]["client"])
             except QuotaDay as e:
                 with lock:
                     if not state[role]["off"]:
@@ -1921,7 +1941,7 @@ def run_wave(db):
             upsert_video(db, c, "analyzed", a=m)
             log(f"  ✓ @{c.get('author')} {c.get('views') or 0:,} ×{c.get('vs_median')} [{'+'.join(sorted(res))}] → {m.get('nutra_score')}/5")
 
-    threads = int(S.get("wave_threads", 10))
+    threads = int(S.get("wave_threads", 16 if ENV("GEMINI_KEY_PAID") else 10))
     with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else threads) as ex:
         list(ex.map(one, queue))
 
@@ -1968,6 +1988,9 @@ def run_wave(db):
         tail_n += len(jobs)
 
     db.q("INSERT OR REPLACE INTO kv VALUES ('wave_tries', ?)", [json.dumps(tries)])
+    if paid_used is not None:
+        db.q("INSERT OR REPLACE INTO kv VALUES ('paid_cls_n', ?)", [str(paid_used + state["cls"]["n"])])
+        J["paid_cls_total"] = paid_used + state["cls"]["n"]
     left = db.q("""SELECT COUNT(*) n FROM videos WHERE source='profile' AND status='queued'""")[0]["n"]
     part = db.q("""SELECT COUNT(*) n FROM videos WHERE status='analyzed' AND json_extract(analysis,'$._m') IS NOT NULL
                    AND (json_extract(analysis,'$._m.cls') IS NULL OR json_extract(analysis,'$._m.txt') IS NULL)""")[0]["n"]
