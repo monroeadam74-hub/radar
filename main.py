@@ -1242,6 +1242,58 @@ def nat_hash():
     print("SNOWJSON_END")
 
 
+def cmp_models(db):
+    """Тест моделей: 20 уже разобранных выстрелов Instagram → свежие ссылки на видео (официальный сборщик) →
+    один и тот же разбор тремя моделями. Пишет только в лог, базу не трогает."""
+    models = [m.strip() for m in (ENV("RADAR_IGTEST") or "gemini-2.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash-lite").split(",")]
+    rows = db.q("""SELECT id, url, author, duration, direction, views FROM videos
+                   WHERE platform='Instagram' AND status='analyzed' AND url IS NOT NULL ORDER BY views DESC LIMIT 200""")
+    seen, pick = set(), []
+    for r in rows:                       # разнообразие: по 1–2 на направление и автора
+        k = (r.get("direction"), r.get("author"))
+        if k in seen:
+            continue
+        seen.add(k); pick.append(r)
+        if len(pick) >= 20:
+            break
+    ac = apify()
+    run = ac.actor("apify/instagram-scraper").call(
+        run_input={"directUrls": [r["url"] for r in pick], "resultsType": "posts", "resultsLimit": 1}, max_items=len(pick))
+    items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+    try:
+        cost = _f(ac.run(_f(run, "id")).get(), "usageTotalUsd", "usage_total_usd")
+    except Exception:
+        cost = None
+    vids = {}
+    for it in items:
+        sc = it.get("shortCode") or it.get("shortcode")
+        if sc and it.get("videoUrl"):
+            vids["ig_" + sc] = it["videoUrl"]
+    log(f"Ссылки на видео: {len(vids)}/{len(pick)}, Apify ${cost}")
+    gemini()
+    out = []
+    for r in pick:
+        if r["id"] not in vids:
+            continue
+        vb = fetch_bytes(vids[r["id"]])
+        if not vb:
+            continue
+        c = {"id": r["id"], "platform": "Instagram", "vertical": "profile", "duration": r.get("duration"), "raw_id": r["id"][3:]}
+        res = {"id": r["id"], "url": r["url"], "author": r["author"], "views": r["views"], "dur": r.get("duration"), "m": {}}
+        for mdl in models:
+            GEM["model"], GEM["fallback"] = mdl, []
+            t0, i0, o0 = time.time(), GEM["tin"], GEM["tout"]
+            try:
+                a = analyze(c, vb)
+            except Exception as e:
+                a = {"error": str(e)[:200]}
+            res["m"][mdl] = {"a": a, "tin": GEM["tin"] - i0, "tout": GEM["tout"] - o0, "sec": round(time.time() - t0, 1)}
+            log(f"  {r['id']} {mdl}: вход {GEM['tin'] - i0}, выход {GEM['tout'] - o0}, {'ок' if isinstance(a, dict) and 'error' not in a else 'сбой'}")
+            time.sleep(4)
+        out.append(res)
+    print("CMPJSON_BEGIN"); print(json.dumps(out, ensure_ascii=True)); print("CMPJSON_END")
+
+
 def fetch_tiktok(profs, limit):
     items = run_actor(CFG.get("tiktok_download_actor", "clockworks/tiktok-scraper"),
                       {"profiles": [p["handle"] for p in profs], "resultsPerPage": int(limit),
@@ -1721,6 +1773,9 @@ def main():
             f"события {_f(info, 'chargedEventCounts', 'charged_event_counts')} цена {str(_f(info, 'pricingInfo', 'pricing_info'))[:400]}")
         for it in items[:25]:
             log("  ", json.dumps({k: it.get(k) for k in ("username", "full_name", "is_verified", "discovered_from", "depth")}, ensure_ascii=False))
+        return
+    if ENV("RADAR_MODE") == "cmpmodels":
+        cmp_models(db)
         return
     if ENV("RADAR_MODE") == "profcheck":
         users = [s.strip().lstrip("@") for s in (ENV("RADAR_IGTEST") or "").split(",") if s.strip()]
