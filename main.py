@@ -75,6 +75,7 @@ SCHEMA = [
         reels INTEGER, median_views INTEGER, best_x REAL, shots INTEGER, new_last INTEGER,
         status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1, ai INTEGER, deep INTEGER)""",
     "CREATE INDEX IF NOT EXISTS i_snap ON snapshots(video_id)",
+    "CREATE TABLE IF NOT EXISTS funnels (url TEXT PRIMARY KEY, profile_id TEXT, final_url TEXT, status TEXT, data TEXT, ts TEXT)",
     "CREATE INDEX IF NOT EXISTS i_vid_author ON videos(author_id)",
 ]
 
@@ -297,6 +298,9 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
  "nutra_reason": "почему такой балл, 1 предложение",
  "why_it_works": "1–2 предложения по-русски",
  "how_to_adapt": "как перенести механику на наш ролик без копирования",
+ "tech": {{"cuts": число склеек/смен плана за ролик, "face_share": "доля времени, когда в кадре лицо ведущего, %",
+          "voice": "ИИ-голос / живой голос / без голоса", "music": "есть фоновая музыка / нет", "captions": "субтитры на экране: да/нет, где (верх/центр/низ)",
+          "first_words_sec": секунда, когда звучит первое слово, "pace": "медленный / средний / быстрый монтаж"}},
  "moderation_risk": "низкий/средний/высокий + почему. ЛЮБЫЕ обещания вылечить, избежать операции, обратить болезнь вспять, религиозные «исцелит» = ВЫСОКИЙ",
  "on_screen_text": [{{"t": секунда, "orig": "надпись", "ru": "перевод"}}],
  "subtitles": [{{"start": сек, "end": сек, "orig": "фраза", "ru": "перевод"}}]
@@ -676,7 +680,9 @@ def _ig_item(it, handle=None):
         author=g(it, "ownerUsername", "authorUsername", "username", "owner.username", "user.username") or handle,
         title=g(it, "caption", "text", "caption.text") or "", published=_ts(g(it, "timestamp", "createdAt", "taken_at", "takenAt")),
         duration=g(it, "videoDuration", "durationSeconds", "video_duration"), lang="", views=int(views),
-        likes=g(it, "likesCount", "likeCount", "like_count", "likes"), comments=g(it, "commentsCount", "commentCount", "comment_count", "comments_count"), shares=None,
+        likes=g(it, "likesCount", "likeCount", "like_count", "likes"), comments=g(it, "commentsCount", "commentCount", "comment_count", "comments_count"),
+        shares=g(it, "sharesCount", "reshareCount", "shareCount", "shares_count"),
+        author_bio=g(it, "authorBio", "ownerBiography", "biography"), author_ext=g(it, "authorExternalUrl", "ownerExternalUrl", "externalUrl"),
         followers=g(it, "ownerFollowersCount", "authorFollowerCount", "followersCount"), video_url=g(it, "videoUrl", "video_url"),
         thumb=g(it, "displayUrl", "thumbnailUrl", "thumbnail_url", "images.0"))
 
@@ -1242,6 +1248,105 @@ def nat_hash():
     print("SNOWJSON_END")
 
 
+def enrich_from_runs(db):
+    """Бесплатно: перечитать уже оплаченные запуски дешёвого сборщика рилсов и дописать репосты, лайки, комментарии,
+    шапку и ссылку из шапки авторов (раньше не сохранялись)."""
+    ac = apify()
+    runs = _f(ac.actor(S.get("ig_actor", "memo23/instagram-reel-scraper")).runs().list(desc=True, limit=30), "items") or []
+    items = []
+    for r in runs:
+        if not str(_f(r, "status")).endswith("SUCCEEDED"):
+            continue
+        try:
+            items += list(ac.dataset(_f(r, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        except Exception as e:
+            log("  набор данных недоступен:", str(e)[:80])
+    log(f"Записей из прошлых запусков: {len(items)} (запусков {len(runs)})")
+    vids, prof = {}, {}
+    for it in items:
+        c = _ig_item(it)
+        if not c:
+            continue
+        vids[c["id"]] = c
+        a = (c.get("author") or "").lower()
+        if a and (c.get("author_bio") or c.get("author_ext")):
+            prof["ig:" + a] = (c.get("author_bio"), c.get("author_ext"))
+    have = {r["id"] for r in db.q("SELECT id FROM videos WHERE platform='Instagram'")}
+    ch_all = [c for k, c in vids.items() if k in have]
+    for i in range(0, len(ch_all), 100):
+        ch = ch_all[i:i + 100]
+        cs = lambda k: " ".join(f"WHEN {lit(c['id'])} THEN {lit(c.get(k))}" for c in ch)
+        db.q(f"UPDATE videos SET shares = COALESCE(CASE id {cs('shares')} END, shares), likes = COALESCE(CASE id {cs('likes')} END, likes), "
+             f"comments = COALESCE(CASE id {cs('comments')} END, comments) WHERE id IN ({','.join(lit(c['id']) for c in ch)})")
+    for pid, (bio, ext) in prof.items():
+        db.q("UPDATE profiles SET bio=COALESCE(?, bio), ext_url=COALESCE(?, ext_url) WHERE id=?", [bio, ext, pid])
+    log(f"Готово: роликов обновлено {len(ch_all)}, с репостами {sum(1 for c in ch_all if c.get('shares') is not None)}, "
+        f"профилей с шапкой {len(prof)}")
+
+
+FUNNEL = """Это текст страницы, на которую ведёт ссылка из шапки Instagram-аккаунта о здоровье. Определи воронку монетизации.
+Верни JSON: {{"type": "мультиссылка / квиз / видео-продажник (VSL) / лендинг продукта / магазин / Amazon / WhatsApp-Telegram / книга / курс-консультация / подписка-рассылка / другое",
+"offer": "что продают или предлагают, по-русски, коротко", "product": "название продукта/бренда или нет",
+"price": "цена, если видна, иначе нет", "network": "ClickBank / Digistore24 / BuyGoods / MaxWeb / Amazon / собственный магазин / нет данных",
+"lead_magnet": "что дают бесплатно (книга, гайд, квиз) или нет", "geo_lang": "язык и гео страницы",
+"claims": "главные обещания продукта, коротко", "summary": "1–2 предложения: как этот аккаунт зарабатывает"}}
+Адрес: {url}
+Ссылки на странице: {links}
+Текст страницы:
+{text}"""
+
+LINKHUBS = ("linktr.ee", "beacons.ai", "stan.store", "lnk.bio", "bio.site", "campsite.bio", "linkin.bio", "taplink", "hoo.be",
+            "flowcode", "solo.to", "msha.ke", "linkbio", "carrd.co", "bit.ly", "tap.bio", "koji.to")
+
+
+def _page(url):
+    ua = {"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36",
+          "accept-language": "en-US,en;q=0.9,es;q=0.8,pt;q=0.7"}
+    r = requests.get(url, headers=ua, timeout=25, allow_redirects=True)
+    html = r.text[:600000]
+    links = re.findall(r'href="(https?://[^"#]+)"', html)
+    txt = re.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>", " ", html)
+    txt = re.sub(r"(?s)<[^>]+>", " ", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    return r.status_code, r.url, txt, links
+
+
+def run_funnels(db):
+    """Воронки: страница по ссылке из шапки (и первая «денежная» ссылка мультиссылки) → Gemini → таблица funnels. Бесплатно."""
+    rows = db.q("SELECT id, ext_url FROM profiles WHERE ext_url IS NOT NULL AND ext_url != ''")
+    done = {r["url"] for r in db.q("SELECT url FROM funnels WHERE status='ok'")}
+    log(f"Воронки: профилей со ссылкой {len(rows)}, уже разобрано {len(done)}")
+    for r in rows:
+        url = r["ext_url"]
+        if url in done:
+            continue
+        try:
+            st, final, txt, links = _page(url)
+            hops = [final]
+            if any(h in final for h in LINKHUBS) or len(txt) < 400:
+                own = [l for l in links if not re.search(r"instagram|facebook|tiktok|youtube|twitter|x\.com|linktr|beacons|"
+                                                          r"stan\.store|apple\.com|google\.com|cdn|fonts|\.(png|jpg|css|js)", l)]
+                if own:
+                    st2, final2, txt2, links2 = _page(own[0])
+                    hops.append(final2)
+                    txt = txt[:3000] + " || СЛЕДУЮЩАЯ СТРАНИЦА: " + txt2
+                    links = links + links2
+            if st >= 400 and len(txt) < 200:
+                raise RuntimeError(f"HTTP {st}")
+            doms = sorted({re.sub(r"^https?://(www\.)?", "", l).split("/")[0] for l in links})[:40]
+            data = ask([FUNNEL.format(url=" → ".join(hops), links=", ".join(doms), text=txt[:12000])], "воронка " + r["id"])
+            if isinstance(data, list):
+                data = next((x for x in data if isinstance(x, dict)), None)
+            db.q("INSERT OR REPLACE INTO funnels VALUES (?,?,?,?,?,?)",
+                 [url, r["id"], " → ".join(hops), "ok" if data else "не разобрано", json.dumps(data or {}, ensure_ascii=False),
+                  NOW.isoformat(timespec="seconds")])
+            log(f"  {r['id']}: {(data or {}).get('type')} — {(data or {}).get('offer')}")
+        except Exception as e:
+            db.q("INSERT OR REPLACE INTO funnels VALUES (?,?,?,?,?,?)",
+                 [url, r["id"], url, "не открылось: " + str(e)[:80], "{}", NOW.isoformat(timespec="seconds")])
+            log(f"  {r['id']}: не открылось ({str(e)[:80]})")
+
+
 def cmp_models(db):
     """Тест моделей: 20 уже разобранных выстрелов Instagram → свежие ссылки на видео (официальный сборщик) →
     один и тот же разбор тремя моделями. Пишет только в лог, базу не трогает."""
@@ -1384,8 +1489,10 @@ def bulk_save(db, cands, known):
     old = [c for c in cands if c["id"] in known]
     for i in range(0, len(old), 150):
         ch = old[i:i + 150]
-        case = " ".join(f"WHEN {lit(c['id'])} THEN {int(c['views'])}" for c in ch)
-        db.q(f"UPDATE videos SET views = CASE id {case} END, updated={lit(ts)} WHERE id IN ({','.join(lit(c['id']) for c in ch)})")
+        cs = lambda k: " ".join(f"WHEN {lit(c['id'])} THEN {lit(c.get(k))}" for c in ch)
+        db.q(f"UPDATE videos SET views = CASE id {cs('views')} END, likes = COALESCE(CASE id {cs('likes')} END, likes), "
+             f"comments = COALESCE(CASE id {cs('comments')} END, comments), shares = COALESCE(CASE id {cs('shares')} END, shares), "
+             f"updated={lit(ts)} WHERE id IN ({','.join(lit(c['id']) for c in ch)})")
     for i in range(0, len(cands), 150):
         ch = cands[i:i + 150]
         db.q("INSERT INTO snapshots VALUES " + ",".join(
@@ -1522,6 +1629,10 @@ def run_profiles(db):
             log(f"  {p['id']}: роликов нет (удалён, закрыт или пуст)")
             db.q("UPDATE profiles SET status=?, last_run=? WHERE id=?", ["нет роликов", NOW.isoformat(timespec="seconds"), p["id"]]); continue
         fol = next((c["followers"] for c in cands if c.get("followers")), None) or p.get("followers")
+        bio = next((c["author_bio"] for c in cands if c.get("author_bio")), None)
+        ext = next((c["author_ext"] for c in cands if c.get("author_ext")), None)
+        if bio or ext:
+            db.q("UPDATE profiles SET bio=COALESCE(?, bio), ext_url=COALESCE(?, ext_url) WHERE id=?", [bio, ext, p["id"]])
         for c in cands:
             c.update(vertical="profiles", source="profile", keyword="профиль @" + p["handle"], author_id=p["id"], author_url=p["url"])
             if fol and not c.get("followers"):
@@ -1737,7 +1848,8 @@ def main():
                   "ALTER TABLE profiles ADD COLUMN deep INTEGER", "ALTER TABLE videos ADD COLUMN direction TEXT",
                   "ALTER TABLE videos ADD COLUMN directions TEXT", "ALTER TABLE videos ADD COLUMN dir_v INTEGER",
                   "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN visual TEXT",
-                  "ALTER TABLE videos ADD COLUMN visuals TEXT", "ALTER TABLE videos ADD COLUMN vis_v INTEGER"):
+                  "ALTER TABLE videos ADD COLUMN visuals TEXT", "ALTER TABLE videos ADD COLUMN vis_v INTEGER",
+                  "ALTER TABLE profiles ADD COLUMN bio TEXT", "ALTER TABLE profiles ADD COLUMN ext_url TEXT"):
         try:
             db.q(alter)
         except Exception:
@@ -1773,6 +1885,12 @@ def main():
             f"события {_f(info, 'chargedEventCounts', 'charged_event_counts')} цена {str(_f(info, 'pricingInfo', 'pricing_info'))[:400]}")
         for it in items[:25]:
             log("  ", json.dumps({k: it.get(k) for k in ("username", "full_name", "is_verified", "discovered_from", "depth")}, ensure_ascii=False))
+        return
+    if ENV("RADAR_MODE") == "enrich":
+        enrich_from_runs(db)
+        return
+    if ENV("RADAR_MODE") == "funnels":
+        run_funnels(db)
         return
     if ENV("RADAR_MODE") == "cmpmodels":
         cmp_models(db)

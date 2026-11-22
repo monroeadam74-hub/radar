@@ -56,7 +56,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .list{flex:999 1 520px;min-width:0;background:var(--s1);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .lh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
-.grid-h,.row{display:grid;grid-template-columns:52px minmax(0,1.6fr) 100px 62px 56px minmax(0,2.4fr);gap:12px;align-items:center;padding:8px 16px}
+.grid-h,.row{display:grid;grid-template-columns:52px minmax(0,1.6fr) 92px 62px 58px 56px minmax(0,2.3fr);gap:12px;align-items:center;padding:8px 16px}
 .grid-h{font-size:12px;color:var(--m);border-bottom:1px solid var(--line)}
 .grid-h button{border:none;background:none;color:var(--m);padding:4px 0;font:inherit;text-align:left;cursor:pointer}
 .grid-h button:hover{color:var(--t)}.grid-h button.on{color:var(--acc);font-weight:600}
@@ -101,6 +101,10 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .tabs{display:flex;gap:16px;border-bottom:1px solid var(--line)}
 .tabs button{border:none;background:none;color:var(--m);padding:8px 0;border-bottom:2px solid transparent}
 .tabs button.on{color:#fff;border-bottom-color:var(--acc);font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}.kpis div{background:var(--s2,#151a21);border-radius:8px;padding:6px 8px}.kpis b{display:block;font-size:14px}.kpis span{font-size:11px;color:var(--m)}
+.tagl{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 8px}.tagl span{font-size:11px;background:#1c2430;color:#9fc3ff;border-radius:6px;padding:2px 6px}.tagl .mn{color:#ffd59a}
+.dyn{font-size:12px;margin:6px 0}.dyn .up{color:var(--acc);font-weight:600}.fun{font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0;display:grid;gap:3px}
+.heat{border-collapse:collapse;font-size:11px}.heat td,.heat th{width:26px;height:22px;text-align:center;border:1px solid #1a1f27}.heat th{color:var(--m);font-weight:500}
 dl{margin:0;display:grid;grid-template-columns:118px minmax(0,1fr);gap:8px 12px;font-size:13px}
 dt{color:var(--m)}dd{margin:0;color:var(--t)}
 .subl{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
@@ -121,7 +125,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 .login input{width:100%;margin:12px 0}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--acc);color:#0B0D10;font-weight:600;padding:10px 18px;border-radius:999px;display:none;z-index:50}
 .kbd{font-size:12px;color:var(--m)}.kbd b{display:inline-block;min-width:20px;text-align:center;padding:1px 6px;border:1px solid var(--s3);border-radius:6px;color:var(--t2);font-weight:600}
-@media(max-width:900px){.det{position:static;max-width:none;max-height:none}.side{max-width:none}.grid-h{display:none}.row{grid-template-columns:52px minmax(0,1fr) 70px}.row .c4,.row .c5,.row .hook{display:none}.fld{grid-template-columns:1fr}.kbd{display:none}}
+@media(max-width:900px){.det{position:static;max-width:none;max-height:none}.side{max-width:none}.grid-h{display:none}.row{grid-template-columns:52px minmax(0,1fr) 70px}.row .c4,.row .c5,.row .c6,.row .hook{display:none}.fld{grid-template-columns:1fr}.kbd{display:none}}
 </style>
 </head>
 <body>
@@ -138,6 +142,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
   <div class="logo">радар<b>.</b></div>
   <nav class="nav" aria-label="Разделы">
     <button class="on" data-v="videos">Ролики</button>
+    <button data-v="summary">Сводка</button>
     <button data-v="authors">Профили</button>
     <button data-v="settings">Настройки</button>
     <button data-v="runs">Запуски</button>
@@ -165,7 +170,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <div><h4>Механика CTA</h4><details class="dd"><summary id="ctaSum"><span>Все</span></summary><div class="ddp" id="ctaBox"></div></details></div>
     <div><h4>Тип контента</h4><details class="dd"><summary id="typeSum"><span>Все</span></summary><div class="ddp" id="typeBox"></div></details></div>
     <div><h4>Сортировка</h4><select id="so" style="width:100%">
-      <option value="score">Балл, потом просмотры</option><option value="views">Просмотры</option><option value="outlier">× (выстрел)</option><option value="pub">Дата публикации</option><option value="new">Дата добавления</option><option value="author">Автор (А–Я)</option></select>
+      <option value="score">Балл, потом просмотры</option><option value="views">Просмотры</option><option value="outlier">× (выстрел)</option><option value="pub">Дата публикации</option><option value="new">Дата добавления</option><option value="author">Автор (А–Я)</option><option value="er">Вовлечённость (ER)</option><option value="share">Репосты ÷ просмотры</option><option value="cmr">Комментарии ÷ просмотры</option></select>
     <div class="chips" style="margin-top:6px"><button class="chip" id="dirB" onclick="F.dir*=-1;limit=150;renderList()">↓ по убыванию</button></div></div>
     <button class="btn" onclick="resetF()">Сбросить фильтры</button>
   </aside>
@@ -202,6 +207,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
   <div style="overflow:auto"><table id="atable"></table></div>
 </div></section>
 
+<section class="view" id="v_summary"><div class="pad" id="sumbox"></div></section>
 <section class="view" id="v_settings"><div class="pad" id="setbox"></div></section>
 
 <section class="view" id="v_runs"><div class="pad">
@@ -240,7 +246,7 @@ async function login(){const r=await fetch("/api/login",{method:"POST",headers:{
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("on",x===b));
   document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.id==="v_"+b.dataset.v));
-  if(b.dataset.v==="authors")loadAuthors(); if(b.dataset.v==="settings")loadSettings(); if(b.dataset.v==="runs")loadRuns();
+  if(b.dataset.v==="summary")renderSummary(); if(b.dataset.v==="authors")loadAuthors(); if(b.dataset.v==="settings")loadSettings(); if(b.dataset.v==="runs")loadRuns();
 });
 
 const QUEUES=[["all","Все"],["none","Неразмеченные"],["good","Нужно"],["bad","Мусор"],["hidden","Скрытые"]];
@@ -311,10 +317,15 @@ function filtered(opt={}){
   const d=F.dir||1;
   if(so==="author")return r.sort((a,b)=>-d*String(a.author||"").localeCompare(String(b.author||""),"ru",{sensitivity:"base"})||(b.views||0)-(a.views||0));
   const key={views:c=>c.views||0,score:c=>(c.nutra_score||0)*1e12+(c.views||0),outlier:c=>xOf(c)||0,
-    new:c=>Date.parse(c.first_seen||0)||0,pub:c=>Date.parse(c.published||0)||0}[so]||(c=>c.views||0);
+    new:c=>Date.parse(c.first_seen||0)||0,pub:c=>Date.parse(c.published||0)||0,er:c=>ER(c)??-1,share:c=>SHR(c)??-1,cmr:c=>CMR(c)??-1}[so]||(c=>c.views||0);
   return r.sort((a,b)=>d*(key(b)-key(a)));
 }
-const COLS=[["",null],["Автор","author"],["Просмотры","views"],["×","outlier"],["Балл","score"],["Хук",null]];
+const COLS=[["",null],["Автор","author"],["Просмотры","views"],["×","outlier"],["ER","er"],["Балл","score"],["Хук",null]];
+const ER=c=>c.views?((c.likes||0)+(c.comments||0))/c.views*100:null, SHR=c=>c.views&&c.shares!=null?c.shares/c.views*100:null, CMR=c=>c.views&&c.comments!=null?c.comments/c.views*100:null;
+const pct=x=>x==null?"—":(x>=10?x.toFixed(0):x>=1?x.toFixed(1):x.toFixed(2)).replace(/\.0+$/,"")+"%";
+const ETfmt=iso=>{try{const d=new Date(iso);if(isNaN(d))return null;const p=new Intl.DateTimeFormat("ru-RU",{timeZone:"America/New_York",weekday:"short",hour:"2-digit",minute:"2-digit"}).format(d);return p;}catch{return null}};
+const ETparts=iso=>{try{const d=new Date(iso);if(isNaN(d)||!/T\d/.test(iso))return null;const f=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short",hour:"numeric",hour12:false}).formatToParts(d);const wd=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].indexOf(f.find(x=>x.type==="weekday").value);return{wd,h:(+f.find(x=>x.type==="hour").value)%24};}catch{return null}};
+const TAGS=t=>({tags:[...new Set((String(t||"").match(/#[\p{L}\p{N}_]+/gu)||[]).map(x=>x.toLowerCase()))],ments:[...new Set((String(t||"").match(/@[A-Za-z0-9._]+/g)||[]).map(x=>x.toLowerCase().replace(/\.$/,"")))]});
 function sortBy(k){const so=$("so");if(so.value===k)F.dir*=-1;else{so.value=k;F.dir=k==="author"?-1:1;}limit=150;renderList();}
 function renderHead(){
   const so=$("so").value,d=F.dir||1,asc=so==="author"?d<0:d<0;
@@ -342,6 +353,7 @@ function row(c){
     <img class="th" loading="lazy" referrerpolicy="no-referrer" alt="" src="${thumbSrc(c)}" onerror="this.style.visibility='hidden'">
     <div class="au"><b>@${e(c.author)}${lb}</b><span>${e(c.platform)} · ${c.duration?Math.round(c.duration):"?"} с${c.source==="profile"?" · профиль":""}${c.direction?` · <span class="dtag">${e(DIRN[c.direction]||c.direction)}</span>`:""}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ"> (ИИ)</span>':""}</span>${c.label==="bad"&&c.reason?`<div class="whyt" title="${e(c.reason)}">✕ ${e(c.reason)}</div>`:""}</div>
     <div>${short(c.views)}</div><div class="c4" title="${c.source==="profile"?"просмотры ÷ медиана просмотров автора":"просмотры ÷ подписчики"}">${xOf(c)?"×"+(xOf(c)<10?(+xOf(c)).toFixed(1).replace(".0",""):Math.round(xOf(c))):"—"}${c.source==="profile"?'<span class="muted" style="font-size:11px"> мед</span>':""}</div>
+    <div class="c6" title="(лайки + комментарии) ÷ просмотры${SHR(c)!=null?" · репосты ÷ просмотры: "+pct(SHR(c)):""}">${pct(ER(c))}</div>
     <div class="c5">${s?`<span class="tag s${s}">${s}/5</span>`:`<span class="muted">—</span>`}</div>
     <div class="hook">${e(a.hook_0_3s||c.title||"")}</div></div>`;
 }
@@ -374,12 +386,35 @@ function renderDet(autoplay){
        <button class="h" onclick="hide()" aria-label="${c.hidden?"Вернуть":"Скрыть"}" title="${c.hidden?"Вернуть":"Скрыть"} · H">
          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9CED6" stroke-width="2" aria-hidden="true">${c.hidden?'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>':'<path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A10 10 0 0122 12a17 17 0 01-3.2 4.2M6.6 6.6A17 17 0 002 12a10 10 0 0014 6.4"/>'}</svg></button>
      </div>
+     <div class="kpis">
+       <div><b>${pct(ER(c))}</b><span>ER</span></div><div><b>${pct(CMR(c))}</b><span>комм. ÷ просм.</span></div>
+       <div><b>${pct(SHR(c))}</b><span>репосты ÷ просм.</span></div><div><b>${e(ETfmt(c.published)||"—")}</b><span>публикация, время США (ET)</span></div></div>
+     ${(()=>{const t=TAGS(c.title);return t.tags.length||t.ments.length?`<div class="tagl">${t.tags.slice(0,12).map(x=>`<span>${e(x)}</span>`).join("")}${t.ments.slice(0,6).map(x=>`<span class="mn">${e(x)}</span>`).join("")}</div>`:"";})()}
+     <div id="snapBox"></div><div id="funBox"></div>
      <div id="whyBox"></div>
      <div class="tabs">${[["an","Разбор"],["txt","Текст"],["sub","Субтитры"],["ost","Надписи"],["note","Заметка"]].map(([k,t])=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';renderTab()">${t}</button>`).join("")}</div>
      <div id="tabBody"></div>
      <div style="font-size:13px"><a href="${e(c.url)}" target="_blank" rel="noopener">Открыть оригинал ↗</a> · <a href="#" onclick="showAuthor(cur().author);return false">все ролики автора</a></div>
    </div>`;
-  renderTab(); renderWhy(); if(autoplay)play(true);
+  renderTab(); renderWhy(); renderFun(c); loadSnaps(c); if(autoplay)play(true);
+}
+async function loadSnaps(c){
+  const box=$("snapBox"); if(!box)return; box.innerHTML="";
+  let r; try{r=await api("/api/snaps?id="+encodeURIComponent(c.id));}catch{return;}
+  if(selId!==c.id)return; const s=(r.snaps||[]).filter(x=>x.views);
+  if(s.length<2){box.innerHTML=`<div class="muted" style="font-size:12px;margin:6px 0">Динамика просмотров появится после следующих обновлений</div>`;return;}
+  const a=s[0],b=s[s.length-1],days=Math.max(1,(Date.parse(b.ts)-Date.parse(a.ts))/864e5),g=(b.views-a.views)/a.views*100;
+  box.innerHTML=`<div class="dyn"><b>Динамика:</b> ${s.map(x=>`${x.ts.slice(5,10).split("-").reverse().join(".")} — ${short(x.views)}`).join(" → ")}
+    <span class="${g>=10?"up":"muted"}">(${g>=0?"+":""}${g.toFixed(0)}% за ${Math.round(days)} дн. · ${short(Math.round((b.views-a.views)/days))}/день)</span></div>`;
+}
+function renderFun(c){
+  const box=$("funBox"); if(!box)return; const p=P.find(x=>x.id===c.author_id); if(!p||!(p.ext_url||p.funnel)){box.innerHTML="";return;}
+  const f=p.funnel, d=(f&&f.data)||{};
+  box.innerHTML=`<div class="fun"><div style="font-size:12px;color:var(--m)">Воронка автора · ссылка в шапке</div>
+    <div><a href="${e(p.ext_url||f.final_url)}" target="_blank" rel="noopener">${e((p.ext_url||"").replace(/^https?:\/\//,"").slice(0,60))} ↗</a></div>
+    ${f&&f.status==="ok"?`<div><b>${e(d.type||"")}</b>${d.offer?" — "+e(d.offer):""}${d.price&&d.price!=="нет"?` · <b>${e(d.price)}</b>`:""}</div>
+      ${d.network&&d.network!=="нет данных"?`<div class="muted">Сеть: ${e(d.network)}</div>`:""}${d.summary?`<div class="muted">${e(d.summary)}</div>`:""}`
+     :`<div class="muted">${f?e(f.status):"ещё не разобрана"}</div>`}</div>`;
 }
 const STATUS={profile_rest:"не выстрел профиля (разбираем только ролики ≥ 2× медианы)",queued:"ждёт разбора",prefilter:"ждёт фильтра",skip_topic:"отсеян: не по теме",skip_lang:"отсеян: другой язык"};
 function renderTab(){
@@ -401,6 +436,7 @@ function renderTab(){
      <dt>Как адаптировать</dt><dd>${e(a.how_to_adapt)}</dd>
      <dt>Под нутру</dt><dd>${e(a.nutra_reason)}</dd>
      <dt>Модерация</dt><dd>${e(a.moderation_risk)}</dd>
+     ${a.tech?`<dt>Монтаж</dt><dd>склеек: <b>${e(a.tech.cuts)}</b> · темп: ${e(a.tech.pace)} · лицо в кадре: ${e(a.tech.face_share)}<br>голос: ${e(a.tech.voice)} · музыка: ${e(a.tech.music)}<br>субтитры: ${e(a.tech.captions)} · первое слово: ${e(a.tech.first_words_sec)} с</dd>`:`<dt>Монтаж</dt><dd class="muted">появится после повторного разбора</dd>`}
      <dt>Ключ</dt><dd class="muted">${e(c.keyword)}</dd></dl>`
      :`<div class="muted">Разбора нет (${e(STATUS[c.status]||c.status)}).${c.prefilter?"<br>Фильтр: "+e(c.prefilter):""}</div><div class="muted" style="margin-top:8px">${e(c.title)}</div>`;
   if(tab==="txt"){
@@ -491,13 +527,35 @@ function authorKey(platform,author_id,handle){
 function isTracked(c){const k=authorKey(c.platform,c.author_id,c.author);return P.some(p=>p.id===k);}
 async function loadProfiles(){try{P=(await api("/api/profiles")).profiles||[];}catch(e){P=[];}renderProfiles();}
 function ago(t){if(!t)return"—";const d=(Date.now()-Date.parse(t+(t.endsWith("Z")?"":"Z")))/864e5;return d<1?"сегодня":Math.floor(d)+" дн. назад";}
+function renderSummary(){
+  const L=filtered(), S=L.filter(c=>c.status==="analyzed"||(xOf(c)||0)>=2);
+  const box=$("sumbox"); const WD=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+  const cnt=Array.from({length:7},()=>Array(24).fill(0)), all=Array.from({length:7},()=>Array(24).fill(0));
+  L.forEach(c=>{const p=ETparts(c.published);if(p)all[p.wd][p.h]++;});
+  S.forEach(c=>{const p=ETparts(c.published);if(p)cnt[p.wd][p.h]++;});
+  const mx=Math.max(1,...cnt.flat());
+  const heat=`<table class="heat"><tr><th></th>${[...Array(24).keys()].map(h=>`<th>${h}</th>`).join("")}</tr>${WD.map((w,i)=>`<tr><th>${w}</th>${cnt[i].map((v,h)=>`<td title="${w} ${h}:00 ET — выстрелов ${v} из ${all[i][h]} роликов" style="background:rgba(61,220,151,${v?0.15+0.85*v/mx:0})">${v||""}</td>`).join("")}</tr>`).join("")}</table>`;
+  const T={}; S.forEach(c=>TAGS(c.title).tags.forEach(t=>{(T[t]=T[t]||{n:0,x:[]}).n++;T[t].x.push(xOf(c)||0);}));
+  const top=Object.entries(T).sort((a,b)=>b[1].n-a[1].n).slice(0,30);
+  const med=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:0;};
+  const tech=S.map(c=>A_(c).tech).filter(Boolean);
+  const share=(f)=>tech.length?Math.round(tech.filter(f).length/tech.length*100)+"%":"—";
+  const nums=k=>tech.map(t=>parseFloat(t[k])).filter(x=>!isNaN(x));
+  box.innerHTML=`<div class="panel"><h3>Сводка по текущим фильтрам</h3><div class="muted">Роликов ${L.length}, выстрелов и разобранных ${S.length}. Меняйте фильтры во вкладке «Ролики» — сводка пересчитается.</div></div>
+   <div class="panel"><h3>Когда выходят выстрелы (время США, ET)</h3><div style="overflow:auto">${heat}</div><div class="muted" style="font-size:12px;margin-top:6px">Цифра — сколько выстрелов опубликовано в этот час. Наведите на клетку, чтобы увидеть, сколько всего роликов вышло в это время.</div></div>
+   <div class="panel"><h3>Хештеги у выстрелов</h3>${top.length?`<table><tr><th>Хештег</th><th>Выстрелов</th><th>Медиана ×</th></tr>${top.map(([t,v])=>`<tr><td>${e(t)}</td><td>${v.n}</td><td>×${med(v.x).toFixed(1)}</td></tr>`).join("")}</table>`:`<div class="muted">Хештегов нет</div>`}</div>
+   <div class="panel"><h3>Технический рецепт выстрелов</h3>${tech.length?`<div>Разобрано с монтажом: ${tech.length}. Медиана склеек: <b>${med(nums("cuts")).toFixed(0)}</b> · первое слово на <b>${med(nums("first_words_sec")).toFixed(1)}</b> с<br>
+     ИИ-голос: <b>${share(t=>/ии/i.test(t.voice||""))}</b> · фоновая музыка: <b>${share(t=>/^есть/i.test(t.music||""))}</b> · субтитры на экране: <b>${share(t=>/^да/i.test(t.captions||""))}</b> · быстрый монтаж: <b>${share(t=>/быстр/i.test(t.pace||""))}</b></div>`
+     :`<div class="muted">Появится после повторного разбора выстрелов с новыми полями монтажа</div>`}</div>`;
+}
 function renderProfiles(){
   const el=$("ptable");if(!el)return;
   if(!P.length){el.innerHTML=`<tr><td class="muted">Профилей пока нет — вставьте ссылку выше или нажмите ☆ Следить у любого ролика.</td></tr>`;return;}
-  el.innerHTML=`<tr><th>Профиль</th><th>Площадка</th><th>Подписчики</th><th>Роликов</th><th>Медиана просм.</th><th>Лучший ×</th><th>Выстрелов</th><th>Новых</th><th>Обновлён</th><th>Статус</th><th title="Персонаж сгенерирован ИИ">ИИ</th><th></th></tr>`+
+  el.innerHTML=`<tr><th>Профиль</th><th>Площадка</th><th>Подписчики</th><th>Роликов</th><th>Медиана просм.</th><th>Лучший ×</th><th>Выстрелов</th><th title="Роликов в неделю за последние 90 дней">Постов/нед</th><th>Воронка (шапка)</th><th>Новых</th><th>Обновлён</th><th>Статус</th><th title="Персонаж сгенерирован ИИ">ИИ</th><th></th></tr>`+
    P.map((p,i)=>`<tr><td><a href="${e(p.url)}" target="_blank" rel="noopener"><b>@${e(p.handle)}</b></a>${p.name&&p.name!==p.handle?`<br><span class="muted" style="font-size:12px">${e(p.name)}</span>`:""}</td>
    <td>${e(p.platform)}</td><td>${n(p.followers)}</td><td>${p.reels??"—"}</td><td>${n(p.median_views)}</td><td>${p.best_x?"×"+(+p.best_x).toFixed(1):"—"}</td>
-   <td><b style="color:var(--acc)">${p.shots??"—"}</b></td><td>${p.new_last??"—"}</td><td>${ago(p.last_run)}</td><td class="muted">${e(p.status||"")}</td><td><button class="aibtn ${p.ai?"on":""}" title="Отметить, что персонаж сгенерирован ИИ" onclick="toggleAI(${i})">ИИ</button></td>
+   <td><b style="color:var(--acc)">${p.shots??"—"}</b></td><td>${p.per_week??"—"}</td>
+   <td style="max-width:260px;font-size:12px">${p.funnel&&p.funnel.status==="ok"?`<b>${e(p.funnel.data.type||"")}</b><br><span class="muted">${e((p.funnel.data.offer||"").slice(0,90))}</span>`:p.ext_url?`<a href="${e(p.ext_url)}" target="_blank" rel="noopener" class="muted">${e(p.ext_url.replace(/^https?:\/\//,"").slice(0,32))}</a>`:"—"}</td><td>${p.new_last??"—"}</td><td>${ago(p.last_run)}</td><td class="muted">${e(p.status||"")}</td><td><button class="aibtn ${p.ai?"on":""}" title="Отметить, что персонаж сгенерирован ИИ" onclick="toggleAI(${i})">ИИ</button></td>
    <td style="white-space:nowrap"><button class="btn" onclick="toProfile(${i})">Ролики</button> <button class="btn" id="del_${i}" onclick="delProfile(${i},this)">Удалить</button></td></tr>`).join("");
 }
 async function toggleAI(i){const p=P[i];p.ai=p.ai?0:1;await api("/api/profiles/ai",{id:p.id,ai:p.ai});

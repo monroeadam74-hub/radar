@@ -7,6 +7,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, platform TEXT, handle TEXT, name TEXT, url TEXT, followers INTEGER,
      reels INTEGER, median_views INTEGER, best_x REAL, shots INTEGER, new_last INTEGER,
      status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1)`,
+  "CREATE TABLE IF NOT EXISTS funnels (url TEXT PRIMARY KEY, profile_id TEXT, final_url TEXT, status TEXT, data TEXT, ts TEXT)",
 ];
 
 const json = (data, status = 200, headers = {}) =>
@@ -31,7 +32,8 @@ async function ensure(env) {
   for (const a of ["ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
                    "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER",
                    "ALTER TABLE videos ADD COLUMN direction TEXT", "ALTER TABLE videos ADD COLUMN directions TEXT", "ALTER TABLE videos ADD COLUMN dir_v INTEGER",
-                   "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN visual TEXT", "ALTER TABLE videos ADD COLUMN visuals TEXT"]) {
+                   "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN visual TEXT", "ALTER TABLE videos ADD COLUMN visuals TEXT",
+                   "ALTER TABLE profiles ADD COLUMN bio TEXT", "ALTER TABLE profiles ADD COLUMN ext_url TEXT"]) {
     try { await env.DB.prepare(a).run(); } catch {}
   }
   // стартовые профили — ИИ-персонажи (метка ставится один раз, дальше переключается во вкладке «Профили»)
@@ -75,6 +77,14 @@ async function api(req, env, url) {
     } catch (e) { return json({ videos: [], note: "Таблица videos ещё не создана — запустите сбор" }); }
     for (const x of rows) { x.analysis = parse(x.analysis, null); x.subtitles = parse(x.subtitles, []); }
     return json({ videos: rows });
+  }
+
+  if (p === "/api/snaps") {
+    const id = url.searchParams.get("id") || "";
+    try {
+      const r = await env.DB.prepare("SELECT ts, views, likes, comments, shares FROM snapshots WHERE video_id = ? ORDER BY ts").bind(id).all();
+      return json({ snaps: r.results || [] });
+    } catch { return json({ snaps: [] }); }
   }
 
   if (p === "/api/thumb") {
@@ -165,7 +175,20 @@ async function api(req, env, url) {
 
   if (p === "/api/profiles" && req.method === "GET") {
     const r = await env.DB.prepare("SELECT * FROM profiles ORDER BY added").all();
-    return json({ profiles: r.results || [] });
+    const prof = r.results || [];
+    // частота постинга: роликов в неделю за последние 90 дней (по дате публикации)
+    try {
+      const f = await env.DB.prepare(`SELECT author_id, COUNT(*) AS n, MIN(published) AS first FROM videos
+          WHERE source='profile' AND published >= date('now','-90 day') GROUP BY author_id`).all();
+      const m = Object.fromEntries((f.results || []).map((x) => [x.author_id, x]));
+      for (const p of prof) { const x = m[p.id]; p.per_week = x ? Math.round((x.n / (90 / 7)) * 10) / 10 : 0; }
+    } catch {}
+    try {
+      const fu = await env.DB.prepare("SELECT profile_id, final_url, status, data, ts FROM funnels").all();
+      const m = Object.fromEntries((fu.results || []).map((x) => [x.profile_id, { ...x, data: parse(x.data, {}) }]));
+      for (const p of prof) p.funnel = m[p.id] || null;
+    } catch {}
+    return json({ profiles: prof });
   }
 
   if (p === "/api/profiles" && req.method === "POST") {
