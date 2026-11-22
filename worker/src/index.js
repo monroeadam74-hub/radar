@@ -21,7 +21,7 @@ async function sha(s) {
 // Пользователи: секрет APP_USERS = "логин:пароль;логин2:пароль2" (или старый APP_PASSWORD — один пароль без логина)
 function users(env) {
   const out = {};
-  for (const pair of String(env.APP_USERS || "").split(/[;\n]/)) {
+  for (const pair of String(env.APP_USERS || "").trim().replace(/^["'`]+|["'`]+$/g, "").split(/[;\n]/)) {
     const i = pair.indexOf(":");
     if (i > 0) out[pair.slice(0, i).trim().toLowerCase()] = pair.slice(i + 1).trim();
   }

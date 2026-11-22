@@ -10,7 +10,7 @@ jobs:
           B=https://radar.sandboxmonroe.com
           # вход первым логином из APP_USERS (пароль не выводится в лог)
           python3 -c "
-          import os,json;p=os.environ.get('APP_USERS','').split(';')[0];l,_,w=p.partition(':');json.dump({'login':l.strip(),'password':w.strip()},open('cred.json','w'))"
+          import os,json,re;raw=os.environ.get('APP_USERS','').strip().strip('\"'+chr(39)+'\x60');p=[x for x in re.split(r'[;\n]',raw) if ':' in x][0];l,_,w=p.partition(':');print('fmt: pairs',len([x for x in re.split(r'[;\n]',raw) if ':' in x]),'login_len',len(l.strip()),'pw_len',len(w.strip()));json.dump({'login':l.strip(),'password':w.strip()},open('cred.json','w'))"
           curl -s -c jar.txt -o /dev/null -w "login %{http_code}\n" -H "content-type: application/json" --data @cred.json "$B/api/login"; rm -f cred.json
           for u in "/api/videos?scope=main" "/api/videos?scope=rest&q=" "/api/videos?scope=rest&q=vega"; do
             echo "== $u"; curl -s -m 60 -b jar.txt -o o.json -w "code %{http_code} size %{size_download} time %{time_total}\n" "$B$u"
