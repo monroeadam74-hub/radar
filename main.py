@@ -1921,7 +1921,7 @@ def run_wave(db):
             upsert_video(db, c, "analyzed", a=m)
             log(f"  ✓ @{c.get('author')} {c.get('views') or 0:,} ×{c.get('vs_median')} [{'+'.join(sorted(res))}] → {m.get('nutra_score')}/5")
 
-    threads = int(S.get("wave_threads", 6))
+    threads = int(S.get("wave_threads", 10))
     with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else threads) as ex:
         list(ex.map(one, queue))
 
