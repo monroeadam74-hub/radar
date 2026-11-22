@@ -244,7 +244,7 @@ async function api(req, env, url) {
   if (p === "/api/run" && req.method === "POST") {
     if (!env.GH_TOKEN || !env.GH_REPO) return json({ ok: false, error: "Не настроен GH_TOKEN / GH_REPO" }, 400);
     const opts = await req.json().catch(() => ({}));
-    const mode = ["full", "profiles"].includes(opts.mode) ? opts.mode : "analyze";
+    const mode = ["full", "profiles", "funnels"].includes(opts.mode) ? opts.mode : "analyze";
     const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/workflows/radar.yml/dispatches`, {
       method: "POST",
       headers: { authorization: `Bearer ${env.GH_TOKEN}`, accept: "application/vnd.github+json", "user-agent": "radar-worker" },
