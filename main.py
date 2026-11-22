@@ -269,7 +269,7 @@ def ask_model(contents, label, model, client=None):
                 return None
         except Exception as e:
             msg = str(e)
-            if re.search(r"credit|billing|prepay|PERMISSION_DENIED", msg, re.I):   # кончился предоплаченный баланс
+            if re.search(r"credit balance|prepay|insufficient|PERMISSION_DENIED", msg, re.I) and "429" not in msg:   # кончился предоплаченный баланс
                 raise QuotaDay("баланс/оплата: " + msg[:250])
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
                 qid = ",".join(sorted(set(re.findall(r"quotaId'?\"?:\s*'?\"?([A-Za-z0-9_-]+)", msg)))) or "?"
@@ -1985,7 +1985,11 @@ def run_wave(db):
         rows = [r for r in rows if roles_left(json.loads(r["analysis"]) if r["status"] == "analyzed" and r["analysis"] else None)][:100]
         if not rows:
             break
-        links, cost = fresh_links([r["url"] for r in rows], min(budget - spent, 0.3))
+        try:
+            links, cost = fresh_links([r["url"] for r in rows], min(budget - spent, 0.3))
+        except Exception as e:   # например, неоплаченный счёт Apify — останавливаем хвост, журнал всё равно пишем
+            log("  Apify: остановка хвоста —", str(e)[:200]); J["apify_error"] = str(e)[:200]
+            break
         spent += cost
         jobs = []
         for r in rows:
