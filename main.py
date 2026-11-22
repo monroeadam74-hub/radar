@@ -2207,12 +2207,19 @@ def main():
     if ENV("RADAR_MODE") == "quota":   # проверка лимитов: один короткий запрос к каждой модели, полный текст ошибки
         from google.genai import types
         c = gemini()
-        for mdl in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite"):
+        from google import genai
+        tests = [("free", c, "gemini-3.1-flash-lite"), ("free", c, "gemini-3.5-flash-lite")]
+        if ENV("GEMINI_KEY_PAID"):
+            tests.append(("PAID", genai.Client(api_key=ENV("GEMINI_KEY_PAID")), "gemini-3.1-flash-lite"))
+        else:
+            log("QUOTA PAID: секрета GEMINI_KEY_PAID нет")
+        for kind, cl, mdl in tests:
+            mdl_ = f"{kind} {mdl}"
             try:
-                r = c.models.generate_content(model=mdl, contents="Say OK")
-                log(f"QUOTA {mdl}: ok {(r.text or '')[:20]}")
+                r = cl.models.generate_content(model=mdl, contents="Say OK")
+                log(f"QUOTA {mdl_}: ok {(r.text or '')[:20]}")
             except Exception as e:
-                log(f"QUOTA {mdl}: {str(e)[:1500]}")
+                log(f"QUOTA {mdl_}: {str(e)[:600]}")
         return
     if ENV("RADAR_MODE") == "wave":
         stats = run_wave(db)
