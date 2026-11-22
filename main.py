@@ -269,6 +269,8 @@ def ask_model(contents, label, model, client=None):
                 return None
         except Exception as e:
             msg = str(e)
+            if re.search(r"credit|billing|prepay|PERMISSION_DENIED", msg, re.I):   # кончился предоплаченный баланс
+                raise QuotaDay("баланс/оплата: " + msg[:250])
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
                 if re.search(r"PerDay|per day|daily", msg, re.I):
                     raise QuotaDay(msg[:300])
