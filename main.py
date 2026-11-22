@@ -1722,6 +1722,26 @@ def main():
         for it in items[:25]:
             log("  ", json.dumps({k: it.get(k) for k in ("username", "full_name", "is_verified", "discovered_from", "depth")}, ensure_ascii=False))
         return
+    if ENV("RADAR_MODE") == "profcheck":
+        users = [s.strip().lstrip("@") for s in (ENV("RADAR_IGTEST") or "").split(",") if s.strip()]
+        budget = float(ENV("RADAR_BUDGET") or 0)
+        if not users or len(users) * 0.0026 > budget:
+            log(f"Не запускаю: ников {len(users)}, бюджет ${budget}"); return
+        ac = apify()
+        run = ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": users}, max_items=len(users))
+        items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        try:
+            spent = _f(ac.run(_f(run, "id")).get(), "usageTotalUsd", "usage_total_usd")
+        except Exception:
+            spent = None
+        log(f"Проверено {len(items)}/{len(users)}, потрачено ${spent}")
+        print("SNOWJSON_BEGIN")
+        for p in items:
+            print(json.dumps({"u": p.get("username"), "name": p.get("fullName"), "fol": p.get("followersCount"), "ver": p.get("verified"),
+                              "url": p.get("externalUrl"), "cat": p.get("businessCategoryName"), "err": p.get("error"),
+                              "bio": (p.get("biography") or "").replace("\n", " · ")[:300]}, ensure_ascii=True))
+        print("SNOWJSON_END")
+        return
     if ENV("RADAR_MODE") == "nathash":
         nat_hash()
         return
