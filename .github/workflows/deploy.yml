@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+      APP_USERS: ${{ secrets.APP_USERS }}
     steps:
       - uses: actions/checkout@v4
       - name: Найти ID базы radar-db
@@ -41,3 +42,11 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         working-directory: worker
         run: echo "$APP_PASSWORD" | npx wrangler secret put APP_PASSWORD
+      # Логины и пароли сайта: секрет APP_USERS = "логин:пароль" (несколько — через ;)
+      - name: Логины сайта (если заданы)
+        if: ${{ env.APP_USERS != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        working-directory: worker
+        run: printf '%s' "$APP_USERS" | npx wrangler secret put APP_USERS

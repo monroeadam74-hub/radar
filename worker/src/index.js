@@ -18,11 +18,25 @@ async function sha(s) {
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
+// Пользователи: секрет APP_USERS = "логин:пароль;логин2:пароль2" (или старый APP_PASSWORD — один пароль без логина)
+function users(env) {
+  const out = {};
+  for (const pair of String(env.APP_USERS || "").split(/[;\n]/)) {
+    const i = pair.indexOf(":");
+    if (i > 0) out[pair.slice(0, i).trim().toLowerCase()] = pair.slice(i + 1).trim();
+  }
+  if (!Object.keys(out).length && env.APP_PASSWORD) out[""] = env.APP_PASSWORD;
+  return out;
+}
+const tokenFor = (login, pass) => sha(login + "|" + pass + "|radar");
+
 async function authed(req, env) {
-  if (!env.APP_PASSWORD) return true; // пароль не задан — открыто (только для первой проверки)
-  const cookie = req.headers.get("cookie") || "";
-  const m = cookie.match(/radar_auth=([a-f0-9]{64})/);
-  return !!m && m[1] === (await sha(env.APP_PASSWORD + "|radar"));
+  const U = users(env);
+  if (!Object.keys(U).length) return true; // доступ не настроен — открыто
+  const m = (req.headers.get("cookie") || "").match(/radar_auth=([a-z0-9._@-]*)\.([a-f0-9]{64})/i);
+  if (!m) return false;
+  const login = m[1].toLowerCase();
+  return login in U && m[2] === (await tokenFor(login, U[login]));
 }
 
 let ensured = false;
@@ -53,14 +67,20 @@ async function api(req, env, url) {
   const p = url.pathname;
 
   if (p === "/api/login" && req.method === "POST") {
-    const { password } = await req.json().catch(() => ({}));
-    if (!env.APP_PASSWORD || password === env.APP_PASSWORD) {
-      const tok = await sha((env.APP_PASSWORD || "") + "|radar");
+    const b = await req.json().catch(() => ({}));
+    const U = users(env), login = String(b.login || "").trim().toLowerCase(), pass = String(b.password || "");
+    const key = "" in U ? "" : login;
+    if (!Object.keys(U).length || (key in U && U[key] === pass)) {
+      const tok = await tokenFor(key, U[key] || "");
       return json({ ok: true }, 200, {
-        "set-cookie": `radar_auth=${tok}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
+        "set-cookie": `radar_auth=${key}.${tok}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
       });
     }
-    return json({ ok: false, error: "Неверный пароль" }, 401);
+    await new Promise((r) => setTimeout(r, 1200)); // замедление подбора
+    return json({ ok: false, error: "Неверный логин или пароль" }, 401);
+  }
+  if (p === "/api/logout") {
+    return json({ ok: true }, 200, { "set-cookie": "radar_auth=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" });
   }
   if (!(await authed(req, env))) return json({ error: "auth" }, 401);
   await ensure(env);

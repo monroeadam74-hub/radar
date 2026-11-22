@@ -131,8 +131,10 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <body>
 <div id="loginBox" class="login" style="display:none">
   <div class="logo">радар<b>.</b></div>
-  <label class="muted" for="pw" style="display:block;margin-top:12px">Пароль</label>
-  <input id="pw" type="password" onkeydown="if(event.key==='Enter')login()">
+  <label class="muted" for="lg" style="display:block;margin-top:12px">Логин</label>
+  <input id="lg" autocomplete="username" onkeydown="if(event.key==='Enter')$('pw').focus()">
+  <label class="muted" for="pw" style="display:block;margin-top:4px">Пароль</label>
+  <input id="pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
   <button class="btn pri" style="width:100%" onclick="login()">Войти</button>
   <div id="loginErr" style="color:var(--bad);margin-top:8px"></div>
 </div>
@@ -148,6 +150,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <button data-v="runs">Запуски</button>
   </nav>
   <label class="search"><span style="position:absolute;left:-9999px">Поиск</span><input id="q" placeholder="Поиск: автор, хук, подпись, ключ…"></label>
+  <button class="btn" onclick="logout()" title="Выйти из радара" style="margin-left:8px">Выйти</button>
   <span class="kbd"><b>↑</b><b>↓</b> выбор · <b>1</b> нужно · <b>2</b> мусор · <b>H</b> скрыть · <b>F</b> следить · <b>Space</b> play</span>
 </header>
 
@@ -242,7 +245,8 @@ const A_=c=>c.analysis||{};
 function toast(t){const el=$("toast");el.textContent=t;el.style.display="block";clearTimeout(el._t);el._t=setTimeout(()=>el.style.display="none",2200);}
 async function api(path,body){const r=await fetch(path,body?{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}:{});if(r.status===401){showLogin();throw new Error("auth");}return r.json();}
 function showLogin(){$("app").style.display="none";$("loginBox").style.display="block";}
-async function login(){const r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password:$("pw").value})});if(r.ok){$("loginBox").style.display="none";start();}else $("loginErr").textContent="Неверный пароль";}
+async function login(){const r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({login:$("lg").value,password:$("pw").value})});if(r.ok){$("loginBox").style.display="none";start();}else $("loginErr").textContent="Неверный логин или пароль";}
+async function logout(){await fetch("/api/logout");location.reload();}
 
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("on",x===b));
