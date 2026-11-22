@@ -10,5 +10,5 @@ jobs:
             echo "== $u"; curl -s -m 60 -o o.json -w "code %{http_code} size %{size_download} time %{time_total}\n" "$B$u"
             python3 -c "
           import json;d=json.load(open('o.json'));v=d.get('videos',[]);print('n',len(v),'counts',d.get('counts'),'note',d.get('note'),'err',d.get('error'))
-          from collections import Counter;print(Counter(x.get('status') for x in v)); print([x.get('author') for x in v[:5]])" || head -c 400 o.json
+          from collections import Counter;print(Counter(x.get('status') for x in v)); print([x.get('author') for x in v[:5]]); print('dir', Counter(x.get('direction') for x in v).most_common(30))" || head -c 400 o.json
           done
