@@ -1066,6 +1066,109 @@ def lookalike():
     print("SNOWJSON_END")
 
 
+def nat_snow():
+    """Натуропаты: проверка известных имён + похожие от семян из разных кластеров + второй круг (приоритет ES/PT).
+    Жёсткий потолок трат — RADAR_BUDGET (по факту из Apify)."""
+    budget = float(ENV("RADAR_BUDGET") or 0)
+    cfg = json.load(open("research/nat_seed.json"))
+    have = set(cfg["have"])
+    if budget <= 0:
+        log("Бюджет 0 — ничего не запускаю"); return
+    ac = apify(); st = {"spent": 0.0}
+    profs, labels, votes, names = {}, {}, {}, {}
+
+    def cost(run, est):
+        try:
+            v = _f(ac.run(_f(run, "id")).get(), "usageTotalUsd", "usage_total_usd")
+            st["spent"] += float(v) if v is not None else est
+        except Exception:
+            st["spent"] += est
+
+    def check(users):
+        users = [u for u in dict.fromkeys(users) if u not in profs and u not in have]
+        n_max = int((budget - st["spent"] - 0.05) / 0.0026)
+        users = users[:max(0, n_max)]
+        for i in range(0, len(users), 500):
+            part = users[i:i + 500]
+            run = ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": part}, max_items=len(part))
+            for it in ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items():
+                u = (it.get("username") or "").lower()
+                if u:
+                    profs[u] = it
+            cost(run, len(part) * 0.0026)
+            log(f"  профили: {len(part)} проверено, потрачено ${st['spent']:.2f}")
+        label([profs[u] for u in users if u in profs])
+
+    def label(items):
+        items = [p for p in items if (p.get("followersCount") or 0) >= 50000]
+        for i in range(0, len(items), 40):
+            txt = "\n".join(f'{p.get("username")} | {p.get("fullName") or ""} | {p.get("businessCategoryName") or ""} | '
+                            f'{(p.get("biography") or "").replace(chr(10), " ")[:220]}' for p in items[i:i + 40])
+            data = ask([NAT_LABEL.format(items=txt)], "разметка")
+            if isinstance(data, dict):
+                data = next((v for v in data.values() if isinstance(v, list)), [])
+            for d in data or []:
+                if isinstance(d, dict) and d.get("u"):
+                    labels[str(d["u"]).lower()] = d
+
+    def related(seeds, per):
+        est = len(seeds) * per * 0.0032 + 0.03
+        if st["spent"] + est > budget:
+            log(f"  похожие: не хватает (нужно ~${est:.2f}, осталось ${budget - st['spent']:.2f})"); return []
+        run = ac.actor("thenetaji/instagram-related-user-scraper").call(
+            run_input={"username": seeds, "maxItem": per, "chainDepth": 0}, max_items=len(seeds) * per)
+        rel = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        cost(run, est)
+        for it in rel:
+            u = (it.get("username") or "").lower()
+            if u and u not in have and u not in profs:
+                votes[u] = votes.get(u, 0) + 1; names[u] = it.get("full_name") or ""
+        log(f"  похожие: {len(seeds)} семян × {per} → {len(rel)}, кандидатов {len(votes)}, потрачено ${st['spent']:.2f}")
+        cands = [u for u in votes if u not in profs]
+        score = {}
+        for i in range(0, len(cands), 150):
+            data = ask([NAT_PICK.format(items="\n".join(f"{u} | {names[u]}" for u in cands[i:i + 150]))], "отбор")
+            if isinstance(data, dict):
+                data = next((v for v in data.values() if isinstance(v, list)), [])
+            for d in data or []:
+                if isinstance(d, dict) and d.get("u"):
+                    try:
+                        score[str(d["u"]).lower()] = int(d.get("s") or 0)
+                    except Exception:
+                        pass
+        pick = [u for u in cands if score.get(u, 0) >= 2]
+        pick.sort(key=lambda u: (score.get(u, 0), votes[u]), reverse=True)
+        log(f"  отбор по имени: из {len(cands)} подходят {len(pick)}")
+        return pick
+
+    def good(u):
+        l, p = labels.get(u, {}), profs.get(u, {})
+        return l.get("fit") and not l.get("excluded") and l.get("lang") in ("EN", "ES", "PT") and (p.get("followersCount") or 0) >= 100000
+
+    log(f"Бюджет ${budget:.2f}")
+    log("Шаг 1: известные имена"); check(cfg["names"])
+    log("Шаг 2: похожие от семян"); check(related(cfg["seeds"], 50))
+    new = [u for u in profs if good(u) and (profs[u].get("followersCount") or 0) >= 300000]
+    new.sort(key=lambda u: (labels[u].get("lang") in ("ES", "PT"), profs[u].get("followersCount") or 0), reverse=True)
+    left = budget - st["spent"]
+    if new and left > 1:
+        seeds2 = new[:25]
+        per2 = max(10, min(40, int((left * 0.6 - 0.03) / 0.0032 / len(seeds2))))
+        log(f"Шаг 3: второй круг от {len(seeds2)} новых (ES/PT вперёд), по {per2}")
+        check(related(seeds2, per2))
+    out = [u for u in profs if (profs[u].get("followersCount") or 0) >= 50000]
+    log(f"Готово: проверено {len(profs)}, подходящих ≥100k {sum(1 for u in profs if good(u))}, потрачено Apify ${st['spent']:.2f}")
+    print("SNOWJSON_BEGIN")
+    for u in out:
+        p, l = profs[u], labels.get(u, {})
+        print(json.dumps({"u": p.get("username"), "name": p.get("fullName"), "fol": p.get("followersCount"), "ver": p.get("verified"),
+                          "cat": p.get("businessCategoryName"), "url": p.get("externalUrl"),
+                          "bio": (p.get("biography") or "").replace("\n", " · ")[:220], "votes": votes.get(u, 0),
+                          "known": u in cfg["names"], **{k: l.get(k) for k in ("fit", "type", "spec", "lang", "country", "excluded")}},
+                         ensure_ascii=True))
+    print("SNOWJSON_END")
+
+
 def fetch_tiktok(profs, limit):
     items = run_actor(CFG.get("tiktok_download_actor", "clockworks/tiktok-scraper"),
                       {"profiles": [p["handle"] for p in profs], "resultsPerPage": int(limit),
@@ -1545,6 +1648,9 @@ def main():
             f"события {_f(info, 'chargedEventCounts', 'charged_event_counts')} цена {str(_f(info, 'pricingInfo', 'pricing_info'))[:400]}")
         for it in items[:25]:
             log("  ", json.dumps({k: it.get(k) for k in ("username", "full_name", "is_verified", "discovered_from", "depth")}, ensure_ascii=False))
+        return
+    if ENV("RADAR_MODE") == "natsnow":
+        nat_snow()
         return
     if ENV("RADAR_MODE") == "lookalike":
         lookalike()
