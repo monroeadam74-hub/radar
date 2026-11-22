@@ -466,41 +466,62 @@ DIRCLASS = """Отнеси каждый ролик о здоровье к нап
 {items}"""
 
 
-def classify_directions(db, limit=4000):
+def classify_directions(db, limit=4000, model=None, client=None, threads=1):
     """Разметка направлений по уже сохранённому тексту (подпись, разбор, субтитры) — без загрузки видео."""
     # всё, что размечено по старому справочнику, — заново
     db.q("UPDATE videos SET direction=NULL, directions=NULL WHERE direction IS NOT NULL AND COALESCE(dir_v, 0) < ?", [DIR_VERSION])
     rows = db.q("SELECT id, title, analysis, subtitles FROM videos WHERE direction IS NULL LIMIT ?", [limit])
     log(f"Направления: к разметке {len(rows)} роликов")
-    done = 0
-    for i in range(0, len(rows), 30):
-        chunk = rows[i:i + 30]
-        items = []
-        for r in chunk:
-            a = json.loads(r["analysis"] or "{}") if r.get("analysis") else {}
-            subs = json.loads(r["subtitles"] or "[]") if r.get("subtitles") else []
-            speech = " ".join(str(s.get("ru") or s.get("orig") or "") for s in subs if isinstance(s, dict))[:350]
-            txt = " | ".join(x for x in [(r.get("title") or "")[:300], a.get("hook_0_3s"), a.get("target_audience"),
-                                          a.get("product_mentioned"), speech] if x and x != "нет")
-            items.append(f'{r["id"]}: {txt!r}')
-        data = ask([DIRCLASS.format(dirs=DIR_LIST, hints=DIR_HINTS, items="\n".join(items))], "направления")
-        if isinstance(data, dict):
-            data = next((v for v in data.values() if isinstance(v, list)), [])
-        upd = []
-        for d in data or []:
-            if not isinstance(d, dict) or not d.get("id"):
-                continue
-            main, alls = norm_dirs(d.get("direction"), d.get("extra"))
-            if main:
-                upd.append((d["id"], main, alls))
-        if upd:
-            ids = ",".join(lit(u[0]) for u in upd)
-            db.q("UPDATE videos SET dir_v = " + str(DIR_VERSION) + ", direction = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[1])}" for u in upd) +
-                 " END, directions = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[2])}" for u in upd) +
-                 f" END WHERE id IN ({ids})")
-            done += len(upd)
-        log(f"  размечено {done}/{len(rows)}")
-    return done
+    done = [0]
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    lk = threading.Lock()
+
+    def batch(chunk):
+            items = []
+            for r in chunk:
+                a = json.loads(r["analysis"] or "{}") if r.get("analysis") else {}
+                subs = json.loads(r["subtitles"] or "[]") if r.get("subtitles") else []
+                speech = " ".join(str(s.get("ru") or s.get("orig") or "") for s in subs if isinstance(s, dict))[:350]
+                txt = " | ".join(x for x in [(r.get("title") or "")[:300], a.get("hook_0_3s"), a.get("target_audience"),
+                                              a.get("product_mentioned"), speech] if x and x != "нет")
+                items.append(f'{r["id"]}: {txt!r}')
+            prompt = DIRCLASS.format(dirs=DIR_LIST, hints=DIR_HINTS, items="\n".join(items))
+            try:
+                data = ask_model([prompt], "направления", model, client) if model else ask([prompt], "направления")
+            except QuotaDay as e:
+                log("  направления: стоп —", str(e)[:150]); return "stop"
+            if data is None:
+                return
+            if isinstance(data, dict):
+                data = next((v for v in data.values() if isinstance(v, list)), [])
+            upd, cids = [], {r["id"] for r in chunk}
+            for d in data or []:
+                if not isinstance(d, dict) or d.get("id") not in cids:
+                    continue
+                main, alls = norm_dirs(d.get("direction"), d.get("extra"))
+                if main:
+                    upd.append((d["id"], main, alls))
+            got = {u[0] for u in upd}
+            if data:   # ответ пришёл, но ролика в нём нет (пустая подпись и т.п.) — «другое», чтобы не крутить повторно
+                om, oa = norm_dirs("other")
+                upd += [(r["id"], om, oa) for r in chunk if r["id"] not in got]
+            if upd:
+                ids = ",".join(lit(u[0]) for u in upd)
+                db.q("UPDATE videos SET dir_v = " + str(DIR_VERSION) + ", direction = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[1])}" for u in upd) +
+                     " END, directions = CASE id " + " ".join(f"WHEN {lit(u[0])} THEN {lit(u[2])}" for u in upd) +
+                     f" END WHERE id IN ({ids})")
+                with lk:
+                    done[0] += len(upd)
+            if done[0] % 900 < 30:
+                log(f"  размечено {done[0]}/{len(rows)}")
+
+    chunks = [rows[i:i + 30] for i in range(0, len(rows), 30)]
+    with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else threads) as ex:
+        for res in ex.map(batch, chunks):
+            pass
+    log(f"Направления: размечено {done[0]}/{len(rows)}")
+    return done[0]
 
 
 def prefilter(cands, vertical):
@@ -1990,6 +2011,19 @@ def run_wave(db):
             list(ex.map(lambda cb: one(*cb), jobs))
         tail_n += len(jobs)
 
+    # направления по подписи для всех роликов без направления («не выстрелы») — только на платном ключе
+    if state["cls"]["client"] and not (state["cls"]["off"] and "потолок" in str(state["cls"]["off"])):
+        try:
+            J["dir_labeled"] = 0
+            for _ in range(10):   # порциями по 6000, чтобы не тянуть из базы всё разом
+                if time.time() - t0 > (max_min + 25) * 60:
+                    break
+                n_ = classify_directions(db, limit=6000, model=m_cls, client=state["cls"]["client"], threads=8)
+                J["dir_labeled"] += n_
+                if n_ < 100:
+                    break
+        except Exception as e:
+            log("Направления: ошибка", str(e)[:200])
     db.q("INSERT OR REPLACE INTO kv VALUES ('wave_tries', ?)", [json.dumps(tries)])
     if paid_used is not None:
         db.q("INSERT OR REPLACE INTO kv VALUES ('paid_cls_n', ?)", [str(paid_used + state["cls"]["n"])])
