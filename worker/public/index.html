@@ -225,7 +225,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
-let V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, hosts:new Set(), vis:new Set(), queue:"all", src:"all", dir:1};
+let CNT={}, REST_Q=null, V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, hosts:new Set(), vis:new Set(), queue:"all", src:"all", dir:1};
 const HOSTS=[["doctor","Врач / эксперт"],["sage","Мудрец-архетип"],["elder","Бабушка / дед / фермер"],["person","Обычный человек / UGC"],["none","Без ведущего"],["unk","Не размечено"]];
 const VISS=[["talking","Говорящая голова"],["pointer","«Указка на тело»"],["shock","Шок-крупный план"],["anatomy","3D-анатомия"],["beforeafter","До / после на экране"],["prop","Предмет в руке + вопрос"],["experiment","Наглядный опыт"],["recipe","Рецепт / приготовление"],["exercise","Упражнение"],["clinic","Клиника / процедура"],["rating","Рейтинг / обзор"],["product","Товар / распаковка / ASMR"],["humor","Юмор / скетч / POV"],["slides","Слайды / текст на фоне"],["unk","Не размечено"]];
 const HOSTN=Object.fromEntries(HOSTS),VISN=Object.fromEntries(VISS);
@@ -290,13 +290,20 @@ function renderQueues(){
   const B=filtered({noQueue:true});
   const cnt={all:B.filter(x=>!x.hidden).length,none:B.filter(x=>!x.hidden&&!x.label).length,good:B.filter(x=>!x.hidden&&x.label==="good").length,bad:B.filter(x=>!x.hidden&&x.label==="bad").length,hidden:B.filter(x=>x.hidden).length};
   const S2=filtered({noStatus:true}), sc={}; S2.forEach(x=>sc[x.status]=(sc[x.status]||0)+1);
-  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value?(sc[o.value]||0):S2.length);});
+  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_Q===null?(CNT.profile_rest||0):o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
 function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,hosts:new Set(),vis:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
-["fv","fs","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();});
+["fv","fs","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();restMaybe();});
+let _rt=null;
+function restMaybe(){clearTimeout(_rt);_rt=setTimeout(async()=>{
+  const q=$("q").value.trim().toLowerCase(), need=$("fs").value==="profile_rest"||q.length>=3;
+  if(!need||REST_Q===q)return;
+  try{const r=await api("/api/videos?scope=rest&q="+encodeURIComponent(q));const have=new Set(V.map(x=>x.id));
+    V=V.filter(x=>x.status!=="profile_rest").concat((r.videos||[]).filter(x=>!have.has(x.id)||true).filter(x=>x.status==="profile_rest"));REST_Q=q;renderList();}catch{}
+},350);}
 $("so").onchange=()=>{F.dir=$("so").value==="author"?-1:1;limit=150;renderList();};
-$("q").oninput=()=>{limit=150;renderList();};
+$("q").oninput=()=>{limit=150;renderList();restMaybe();};
 
 function filtered(opt={}){
   const fv=$("fv").value,fs=$("fs").value,so=$("so").value,q=$("q").value.toLowerCase(),yt=$("pYT").checked,tt=$("pTT").checked,ig=$("pIG").checked;
@@ -397,7 +404,12 @@ function renderDet(autoplay){
      <div id="tabBody"></div>
      <div style="font-size:13px"><a href="${e(c.url)}" target="_blank" rel="noopener">Открыть оригинал ↗</a> · <a href="#" onclick="showAuthor(cur().author);return false">все ролики автора</a></div>
    </div>`;
-  renderTab(); renderWhy(); renderFun(c); loadSnaps(c); if(autoplay)play(true);
+  renderTab(); renderWhy(); renderFun(c); loadSnaps(c); loadFull(c); if(autoplay)play(true);
+}
+async function loadFull(c){
+  if(!c.slim||!c.analysis)return;
+  try{const r=await api("/api/video?id="+encodeURIComponent(c.id));c.analysis=r.analysis||c.analysis;c.subtitles=r.subtitles||[];c.slim=0;}catch{return;}
+  if(selId===c.id)renderTab();
 }
 async function loadSnaps(c){
   const box=$("snapBox"); if(!box)return; box.innerHTML="";
@@ -472,7 +484,7 @@ async function play(muted){
   await loadYT(); const id=selId; if(cur()!==c)return;
   player=new YT.Player("ytp",{videoId:raw(id),playerVars:{autoplay:1,mute:muted?1:0,loop:1,playlist:raw(id),playsinline:1,rel:0,modestbranding:1},
     events:{onReady:ev=>{ev.target.setPlaybackRate(rate);if(muted)ev.target.mute();ev.target.playVideo();}}});
-  const subs=c.subtitles||[];
+  const subs={find:f=>(c.subtitles||[]).find(f)};
   clearInterval(window._subT);
   window._subT=setInterval(()=>{if(selId!==id||!player||!player.getCurrentTime)return;const t=player.getCurrentTime(),s=subs.find(x=>t>=x.start&&t<x.end);const el=$("sub");if(el)el.innerHTML=s&&subMode!=="off"?`<span>${e(subMode==="ru"?s.ru:s.orig)}</span>`:"";},200);
 }
@@ -506,7 +518,7 @@ function refreshCard(c){updRow(c);renderQueues();
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;}
 async function saveNote(){const c=cur();c.note=$("noteTa").value;await api("/api/label",{id:c.id,note:c.note});toast("Заметка сохранена");}
 function updRow(c){const r=$("r_"+c.id);if(r){const d=document.createElement("div");d.innerHTML=row(c);r.replaceWith(d.firstElementChild);}}
-function showAuthor(h){$("q").value=h;$("fs").value="";F.queue="all";renderQueues();renderList();}
+function showAuthor(h){$("q").value=h;$("fs").value="";F.queue="all";renderQueues();renderList();restMaybe();}
 
 document.addEventListener("keydown",ev=>{
   if(!$("v_videos").classList.contains("on"))return;
@@ -572,7 +584,7 @@ async function delProfile(i,btn){
   if(!btn.dataset.sure){btn.dataset.sure=1;btn.textContent="Точно удалить?";btn.style.borderColor="var(--bad)";btn.style.color="var(--bad)";setTimeout(()=>{if(btn.isConnected){delete btn.dataset.sure;btn.textContent="Удалить";btn.style.borderColor="";btn.style.color="";}},4000);return;}
   await api("/api/profiles/delete",{id:p.id});toast("Профиль удалён из слежки");await loadProfiles();
 }
-function toProfile(i){const p=P[i];document.querySelector('.nav button[data-v="videos"]').click();F.src="profile";$("q").value=p.handle;$("fs").value="";F.queue="all";renderQueues();renderList();}
+function toProfile(i){const p=P[i];document.querySelector('.nav button[data-v="videos"]').click();F.src="profile";$("q").value=p.handle;$("fs").value="";F.queue="all";renderQueues();renderList();restMaybe();}
 async function follow(){
   const c=cur();if(!c)return;const k=authorKey(c.platform,c.author_id,c.author);
   const ex=P.find(p=>p.id===k);
@@ -624,7 +636,7 @@ async function loadRuns(){api("/api/stats").then(s=>{if(s.size)$("runmsg").textC
 async function runNow(mode){$("runmsg").textContent="Запускаю…";const r=await api("/api/run",{mode});$("runmsg").textContent=r.ok?"Запущено. Результаты через 5–30 минут — обновите страницу.":"Ошибка: "+(r.error||"");}
 
 async function start(){
-  try{V=(await api("/api/videos")).videos||[];}catch(err){return;}
+  try{const r=await api("/api/videos?scope=main");V=r.videos||[];CNT=r.counts||{};}catch(err){return;}
   $("app").style.display="block"; buildSide(); renderList(); loadProfiles();
   if(LIST[0])select(LIST[0].id,false);
 }

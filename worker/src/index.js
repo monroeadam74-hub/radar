@@ -66,17 +66,40 @@ async function api(req, env, url) {
   await ensure(env);
 
   if (p === "/api/videos") {
-    let rows = [];
+    // scope=main — всё, кроме «не выстрелов» профилей (облегчённый разбор: только поля для списка и фильтров);
+    // scope=rest — «не выстрелы» профилей по поиску (q) — догружаются по запросу
+    const scope = url.searchParams.get("scope") || "main";
+    const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+    const slim = `json_object('hook_0_3s', json_extract(v.analysis,'$.hook_0_3s'), 'hook_type', json_extract(v.analysis,'$.hook_type'),
+        'cta', json_extract(v.analysis,'$.cta'), 'cta_mechanic', json_extract(v.analysis,'$.cta_mechanic'),
+        'tech', json_extract(v.analysis,'$.tech'))`;
+    const cols = `v.id, v.platform, v.vertical, v.url, v.author, v.author_id, substr(v.title,1,600) AS title, v.published, v.duration, v.lang, v.keyword,
+        v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score, v.content_type,
+        CASE WHEN v.analysis IS NULL THEN NULL ELSE ${slim} END AS analysis, v.first_seen, v.source, v.vs_median, v.direction, v.directions,
+        v.host, v.visual, v.visuals, COALESCE(pr.ai, 0) AS ai, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden`;
+    const from = "FROM videos v LEFT JOIN labels l ON l.id = v.id LEFT JOIN profiles pr ON pr.id = v.author_id";
+    let rows = [], counts = {};
     try {
-      const r = await env.DB.prepare(
-        `SELECT v.id, v.platform, v.vertical, v.url, v.author, v.author_id, v.title, v.published, v.duration, v.lang, v.keyword,
-                v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score,
-                v.content_type, v.analysis, v.subtitles, v.first_seen, v.source, v.vs_median, v.direction, v.directions, v.host, v.visual, v.visuals, COALESCE(pr.ai, 0) AS ai, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden
-         FROM videos v LEFT JOIN labels l ON l.id = v.id LEFT JOIN profiles pr ON pr.id = v.author_id ORDER BY v.views DESC LIMIT 3000`).all();
-      rows = r.results || [];
-    } catch (e) { return json({ videos: [], note: "Таблица videos ещё не создана — запустите сбор" }); }
-    for (const x of rows) { x.analysis = parse(x.analysis, null); x.subtitles = parse(x.subtitles, []); }
-    return json({ videos: rows });
+      if (scope === "rest") {
+        const like = "%" + q + "%";
+        const r = await env.DB.prepare(`SELECT ${cols} ${from} WHERE v.status='profile_rest' AND (?='' OR lower(v.author) LIKE ? OR lower(v.title) LIKE ?)
+            ORDER BY v.views DESC LIMIT 3000`).bind(q, like, like).all();
+        rows = r.results || [];
+      } else {
+        const r = await env.DB.prepare(`SELECT ${cols} ${from} WHERE COALESCE(v.status,'') != 'profile_rest' ORDER BY v.views DESC LIMIT 30000`).all();
+        rows = r.results || [];
+        const c = await env.DB.prepare("SELECT status, COUNT(*) AS n FROM videos GROUP BY status").all();
+        for (const x of c.results || []) counts[x.status || ""] = x.n;
+      }
+    } catch (e) { return json({ videos: [], counts, note: "Таблица videos ещё не создана — запустите сбор" }); }
+    for (const x of rows) { x.analysis = parse(x.analysis, null); x.slim = 1; }
+    return json({ videos: rows, counts });
+  }
+
+  if (p === "/api/video") {
+    const id = url.searchParams.get("id") || "";
+    const r = await env.DB.prepare("SELECT analysis, subtitles FROM videos WHERE id = ?").bind(id).first();
+    return json({ analysis: parse(r && r.analysis, null), subtitles: parse(r && r.subtitles, []) });
   }
 
   if (p === "/api/snaps") {
