@@ -4,10 +4,16 @@ jobs:
   d:
     runs-on: ubuntu-latest
     steps:
-      - run: |
+      - env:
+          APP_USERS: ${{ secrets.APP_USERS }}
+        run: |
           B=https://radar.sandboxmonroe.com
+          # вход первым логином из APP_USERS (пароль не выводится в лог)
+          python3 -c "
+          import os,json;p=os.environ.get('APP_USERS','').split(';')[0];l,_,w=p.partition(':');json.dump({'login':l.strip(),'password':w.strip()},open('cred.json','w'))"
+          curl -s -c jar.txt -o /dev/null -w "login %{http_code}\n" -H "content-type: application/json" --data @cred.json "$B/api/login"; rm -f cred.json
           for u in "/api/videos?scope=main" "/api/videos?scope=rest&q=" "/api/videos?scope=rest&q=vega"; do
-            echo "== $u"; curl -s -m 60 -o o.json -w "code %{http_code} size %{size_download} time %{time_total}\n" "$B$u"
+            echo "== $u"; curl -s -m 60 -b jar.txt -o o.json -w "code %{http_code} size %{size_download} time %{time_total}\n" "$B$u"
             python3 -c "
           import json;d=json.load(open('o.json'));v=d.get('videos',[]);print('n',len(v),'counts',d.get('counts'),'note',d.get('note'),'err',d.get('error'))
           from collections import Counter;print(Counter(x.get('status') for x in v)); print([x.get('author') for x in v[:5]]); print('dir', Counter(x.get('direction') for x in v).most_common(30))" || head -c 400 o.json
