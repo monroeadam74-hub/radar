@@ -1169,6 +1169,79 @@ def nat_snow():
     print("SNOWJSON_END")
 
 
+def nat_hash():
+    """Натуропаты по хештегам: посты → авторы (без уже известных) → отбор → проверка профилей. Потолок — RADAR_BUDGET."""
+    budget = float(ENV("RADAR_BUDGET") or 0)
+    cfg = json.load(open("research/nat_hash.json")); have = set(cfg["have"])
+    if budget <= 0:
+        log("Бюджет 0 — ничего не запускаю"); return
+    ac = apify(); spent = 0.0
+
+    def cost(run, est):
+        try:
+            v = _f(ac.run(_f(run, "id")).get(), "usageTotalUsd", "usage_total_usd")
+            return float(v) if v is not None else est
+        except Exception:
+            return est
+
+    per = max(10, min(50, int(budget * 0.55 / 0.0023 / len(cfg["tags"]))))
+    run = ac.actor("apify/instagram-hashtag-scraper").call(
+        run_input={"hashtags": cfg["tags"], "resultsLimit": per, "resultsType": "posts"}, max_items=per * len(cfg["tags"]))
+    posts = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+    spent += cost(run, len(posts) * 0.0023)
+    auth = {}
+    for p in posts:
+        u = (p.get("ownerUsername") or "").lower()
+        if not u or u in have:
+            continue
+        a = auth.setdefault(u, {"n": 0, "likes": 0, "views": 0, "name": p.get("ownerFullName") or "", "tags": set()})
+        a["n"] += 1; a["likes"] = max(a["likes"], p.get("likesCount") or 0)
+        a["views"] = max(a["views"], p.get("videoPlayCount") or p.get("videoViewCount") or 0)
+        a["tags"].add(str(p.get("inputUrl") or p.get("hashtag") or "")[-30:])
+    log(f"Хештеги: {len(cfg['tags'])} × {per} → постов {len(posts)}, новых авторов {len(auth)}, потрачено ${spent:.2f}")
+    score = {}
+    cands = list(auth)
+    for i in range(0, len(cands), 150):
+        data = ask([NAT_PICK.format(items="\n".join(f"{u} | {auth[u]['name']}" for u in cands[i:i + 150]))], "отбор")
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        for d in data or []:
+            if isinstance(d, dict) and d.get("u"):
+                try:
+                    score[str(d["u"]).lower()] = int(d.get("s") or 0)
+                except Exception:
+                    pass
+    pick = [u for u in cands if score.get(u, 0) >= 2]
+    pick.sort(key=lambda u: (auth[u]["likes"] + auth[u]["views"] / 20), reverse=True)
+    n_max = int((budget - spent - 0.05) / 0.0026)
+    log(f"Отбор: из {len(cands)} подходят {len(pick)}, проверяем {min(len(pick), max(0, n_max))}")
+    pick = pick[:max(0, n_max)]
+    profs = []
+    if pick:
+        run = ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": pick}, max_items=len(pick))
+        profs = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        spent += cost(run, len(pick) * 0.0026)
+    lab = {}
+    big = [p for p in profs if (p.get("followersCount") or 0) >= 50000]
+    for i in range(0, len(big), 40):
+        txt = "\n".join(f'{p.get("username")} | {p.get("fullName") or ""} | {p.get("businessCategoryName") or ""} | '
+                        f'{(p.get("biography") or "").replace(chr(10), " ")[:220]}' for p in big[i:i + 40])
+        data = ask([NAT_LABEL.format(items=txt)], "разметка")
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        for d in data or []:
+            if isinstance(d, dict) and d.get("u"):
+                lab[str(d["u"]).lower()] = d
+    log(f"Готово: проверено {len(profs)}, ≥50k {len(big)}, потрачено Apify ${spent:.2f}")
+    print("SNOWJSON_BEGIN")
+    for p in big:
+        u = (p.get("username") or "").lower(); l = lab.get(u, {}); a = auth.get(u, {})
+        print(json.dumps({"u": p.get("username"), "name": p.get("fullName"), "fol": p.get("followersCount"), "ver": p.get("verified"),
+                          "bio": (p.get("biography") or "").replace("\n", " · ")[:220], "posts": a.get("n"), "likes": a.get("likes"),
+                          **{k: l.get(k) for k in ("fit", "type", "spec", "lang", "country", "excluded")}}, ensure_ascii=True))
+    print("SNOWJSON_END")
+
+
 def fetch_tiktok(profs, limit):
     items = run_actor(CFG.get("tiktok_download_actor", "clockworks/tiktok-scraper"),
                       {"profiles": [p["handle"] for p in profs], "resultsPerPage": int(limit),
@@ -1648,6 +1721,9 @@ def main():
             f"события {_f(info, 'chargedEventCounts', 'charged_event_counts')} цена {str(_f(info, 'pricingInfo', 'pricing_info'))[:400]}")
         for it in items[:25]:
             log("  ", json.dumps({k: it.get(k) for k in ("username", "full_name", "is_verified", "discovered_from", "depth")}, ensure_ascii=False))
+        return
+    if ENV("RADAR_MODE") == "nathash":
+        nat_hash()
         return
     if ENV("RADAR_MODE") == "natsnow":
         nat_snow()
