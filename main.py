@@ -272,10 +272,11 @@ def ask_model(contents, label, model, client=None):
             if re.search(r"credit|billing|prepay|PERMISSION_DENIED", msg, re.I):   # кончился предоплаченный баланс
                 raise QuotaDay("баланс/оплата: " + msg[:250])
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                qid = ",".join(sorted(set(re.findall(r"quotaId'?\"?:\s*'?\"?([A-Za-z0-9_-]+)", msg)))) or "?"
                 if re.search(r"PerDay|per day|daily", msg, re.I):
-                    raise QuotaDay(msg[:300])
+                    raise QuotaDay(f"[{qid}] " + msg[:300])
                 if attempt >= 4:
-                    raise QuotaDay("постоянный 429: " + msg[:250])
+                    raise QuotaDay(f"постоянный 429 [{qid}]: " + msg[:250])
                 time.sleep(20 + 20 * attempt)
                 continue
             log(f"  {label}: ошибка {model} ({msg[:90]})")
