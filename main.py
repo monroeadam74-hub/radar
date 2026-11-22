@@ -971,6 +971,101 @@ def med_snow():
     print("SNOWJSON_END")
 
 
+NAT_PICK = """Это ники и имена Instagram-аккаунтов из блока «похожие» у популярного натуропата.
+Нужны аккаунты о натуральной/альтернативной медицине и здоровье: натуропаты, травники, холистика, народные рецепты,
+аюрведа/китайская медицина, функциональная медицина, врачи с натуральным подходом, паблики «remedies/remedios/remédios»,
+ИИ-персонажи о здоровье (бабушки, фермеры, монахи, «доктора»). Язык: английский, испанский или португальский.
+НЕ нужны: Индия и хинди; бренды-магазины; знаменитости; спорт и фитнес без здоровья; юмор; мода; религия без здоровья.
+Оцени по имени и нику: 3 — почти точно в нише; 2 — вероятно про здоровье; 1 — сомнительно; 0 — явно не то.
+Верни JSON-список: [{{"u": "ник", "s": 0-3}}]
+Аккаунты:
+{items}"""
+
+NAT_LABEL = """Для каждого Instagram-аккаунта по имени, категории и описанию (био) определи:
+"fit": true, если аккаунт о натуральной/альтернативной медицине или здоровье (натуропат, травник, холистика, народные рецепты,
+функциональная медицина, врач с натуральным подходом, паблик о здоровье, ИИ-персонаж о здоровье); иначе false;
+"type": "Натуропат" / "Травник" / "Врач" / "Практик (не врач)" / "Паблик" / "ИИ-персонаж" / "Не в нише";
+"spec": направленность по-русски коротко; "lang": EN / ES / PT / другое; "country": страна или "";
+"excluded": true, если Индия/хинди.
+Верни JSON-список: [{{"u": "ник", "fit": true, "type": "...", "spec": "...", "lang": "EN", "country": "", "excluded": false}}]
+Аккаунты:
+{items}"""
+
+
+def lookalike():
+    """Похожие на заданные аккаунты (RADAR_IGTEST — ники через запятую): похожие → отбор по имени → проверка профиля.
+    Жёсткий потолок — RADAR_BUDGET."""
+    budget = float(ENV("RADAR_BUDGET") or 0)
+    seeds = [s.strip().lstrip("@").lower() for s in (ENV("RADAR_IGTEST") or "").split(",") if s.strip()]
+    per = int(ENV("RADAR_PER") or 80)
+    if budget <= 0 or not seeds:
+        log("Нет бюджета или семян — ничего не запускаю"); return
+    ac = apify(); spent = 0.0
+
+    def cost(run, est):
+        try:
+            v = _f(ac.run(_f(run, "id")).get(), "usageTotalUsd", "usage_total_usd")
+            return float(v) if v is not None else est
+        except Exception:
+            return est
+
+    est = len(seeds) * per * 0.0032 + 0.03
+    if est > budget:
+        per = max(10, int((budget * 0.6 - 0.03) / 0.0032 / len(seeds)))
+        est = len(seeds) * per * 0.0032 + 0.03
+    run = ac.actor("thenetaji/instagram-related-user-scraper").call(
+        run_input={"username": seeds, "maxItem": per, "chainDepth": 0}, max_items=len(seeds) * per)
+    rel = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+    spent += cost(run, est)
+    votes, names = {}, {}
+    for it in rel:
+        u = (it.get("username") or "").lower()
+        if u and u not in seeds:
+            votes[u] = votes.get(u, 0) + 1; names[u] = it.get("full_name") or ""
+    log(f"Похожие: {len(rel)} записей, уникальных {len(votes)}, потрачено ${spent:.2f}")
+    score = {}
+    cands = list(votes)
+    for i in range(0, len(cands), 150):
+        data = ask([NAT_PICK.format(items="\n".join(f"{u} | {names[u]}" for u in cands[i:i + 150]))], "отбор")
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        for d in data or []:
+            if isinstance(d, dict) and d.get("u"):
+                try:
+                    score[str(d["u"]).lower()] = int(d.get("s") or 0)
+                except Exception:
+                    pass
+    pick = [u for u in cands if score.get(u, 0) >= 2]
+    pick.sort(key=lambda u: (score.get(u, 0), votes[u]), reverse=True)
+    n_max = int((budget - spent - 0.05) / 0.0026)
+    pick = (seeds + pick)[:max(0, n_max)]
+    log(f"Отбор: из {len(cands)} подходят {len([u for u in cands if score.get(u, 0) >= 2])}, проверяем {len(pick)}")
+    profs = []
+    if pick:
+        run = ac.actor("apify/instagram-profile-scraper").call(run_input={"usernames": pick}, max_items=len(pick))
+        profs = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+        spent += cost(run, len(pick) * 0.0026)
+    lab = {}
+    for i in range(0, len(profs), 40):
+        txt = "\n".join(f'{p.get("username")} | {p.get("fullName") or ""} | {p.get("businessCategoryName") or ""} | '
+                        f'{(p.get("biography") or "").replace(chr(10), " ")[:220]}' for p in profs[i:i + 40])
+        data = ask([NAT_LABEL.format(items=txt)], "разметка")
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        for d in data or []:
+            if isinstance(d, dict) and d.get("u"):
+                lab[str(d["u"]).lower()] = d
+    log(f"Готово: проверено {len(profs)}, потрачено Apify ${spent:.2f}")
+    print("SNOWJSON_BEGIN")
+    for p in profs:
+        u = (p.get("username") or "").lower(); l = lab.get(u, {})
+        print(json.dumps({"u": p.get("username"), "name": p.get("fullName"), "fol": p.get("followersCount"), "ver": p.get("verified"),
+                          "cat": p.get("businessCategoryName"), "url": p.get("externalUrl"),
+                          "bio": (p.get("biography") or "").replace("\n", " · ")[:220], "votes": votes.get(u, 0), "seed": u in seeds,
+                          **{k: l.get(k) for k in ("fit", "type", "spec", "lang", "country", "excluded")}}, ensure_ascii=True))
+    print("SNOWJSON_END")
+
+
 def fetch_tiktok(profs, limit):
     items = run_actor(CFG.get("tiktok_download_actor", "clockworks/tiktok-scraper"),
                       {"profiles": [p["handle"] for p in profs], "resultsPerPage": int(limit),
@@ -1450,6 +1545,9 @@ def main():
             f"события {_f(info, 'chargedEventCounts', 'charged_event_counts')} цена {str(_f(info, 'pricingInfo', 'pricing_info'))[:400]}")
         for it in items[:25]:
             log("  ", json.dumps({k: it.get(k) for k in ("username", "full_name", "is_verified", "discovered_from", "depth")}, ensure_ascii=False))
+        return
+    if ENV("RADAR_MODE") == "lookalike":
+        lookalike()
         return
     if ENV("RADAR_MODE") == "medsnow":
         med_snow()
