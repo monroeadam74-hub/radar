@@ -245,6 +245,44 @@ def gemini():
     return c
 
 
+class QuotaDay(Exception):
+    """Дневной лимит модели исчерпан."""
+
+
+def ask_model(contents, label, model):
+    """Один вызов конкретной модели (без запасных). 429 «в день» → QuotaDay; 429 «в минуту» и 503 → пауза и повтор."""
+    from google.genai import types
+    c = gemini()
+    for attempt in range(6):
+        try:
+            r = c.models.generate_content(model=model, contents=contents,
+                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2))
+            u = getattr(r, "usage_metadata", None)
+            GEM["tin"] += getattr(u, "prompt_token_count", 0) or 0
+            GEM["tout"] += getattr(u, "candidates_token_count", 0) or 0
+            txt = (r.text or "").strip().strip("`")
+            if txt.startswith("json"):
+                txt = txt[4:]
+            return json.loads(txt)
+        except json.JSONDecodeError:
+            if attempt >= 1:
+                return None
+        except Exception as e:
+            msg = str(e)
+            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                if re.search(r"PerDay|per day|daily", msg, re.I):
+                    raise QuotaDay(msg[:300])
+                if attempt >= 4:
+                    raise QuotaDay("постоянный 429: " + msg[:250])
+                time.sleep(20 + 20 * attempt)
+                continue
+            log(f"  {label}: ошибка {model} ({msg[:90]})")
+            if attempt >= 2:
+                return None
+            time.sleep(8 * (attempt + 1))
+    return None
+
+
 def ask(contents, label):
     from google.genai import types
     c = gemini()
@@ -301,7 +339,7 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
  "tech": {{"cuts": число склеек/смен плана за ролик, "face_share": "доля времени, когда в кадре лицо ведущего, %",
           "voice": "ИИ-голос / живой голос / без голоса", "music": "есть фоновая музыка / нет", "captions": "субтитры на экране: да/нет, где (верх/центр/низ)",
           "first_words_sec": секунда, когда звучит первое слово, "pace": "медленный / средний / быстрый монтаж"}},
- "moderation_risk": "низкий/средний/высокий + почему. ЛЮБЫЕ обещания вылечить, избежать операции, обратить болезнь вспять, религиозные «исцелит» = ВЫСОКИЙ",
+ "moderation_risk": "низкий/средний/высокий + почему. ЛЮБЫЕ обещания вылечить, снять или убрать боль, избежать операции или лекарств, обратить болезнь вспять, «за N дней», религиозные «исцелит» = ВЫСОКИЙ",
  "on_screen_text": [{{"t": секунда, "orig": "надпись", "ru": "перевод"}}],
  "subtitles": [{{"start": сек, "end": сек, "orig": "фраза", "ru": "перевод"}}]
 }}
@@ -500,7 +538,7 @@ def clean_subs(subs, dur):
     return out
 
 
-def analyze(c, video_bytes=None):
+def analyze(c, video_bytes=None, model=None):
     from google.genai import types
     v = CFG["verticals"].get(c["vertical"]) or PROFILE_VERTICAL
     prompt = ANALYSIS.format(vname=v.get("name", c["vertical"]), scale=v.get("nutra_scale", ""), dur=c.get("duration") or 60,
@@ -509,7 +547,7 @@ def analyze(c, video_bytes=None):
         part = types.Part(file_data=types.FileData(file_uri=f"https://www.youtube.com/watch?v={c['raw_id']}"))
     else:
         part = types.Part.from_bytes(data=video_bytes, mime_type="video/mp4")
-    data = ask([part, prompt], c["id"])
+    data = ask_model([part, prompt], c["id"], model) if model else ask([part, prompt], c["id"])
     if isinstance(data, list):
         data = next((x for x in data if isinstance(x, dict)), None)
     if not isinstance(data, dict):
@@ -1555,14 +1593,16 @@ def seed_profiles(db):
     db.q("INSERT OR REPLACE INTO kv VALUES ('profiles_seeded', '1')")
 
 
-def run_profiles(db):
+def run_profiles(db, only=None, analyze_now=True, deep_n=None):
     """Профили. Первый раз — глубокий скан (до 500 роликов / 18 мес.), дальше раз в 3 дня — ролики за последний месяц.
     Выстрел = просмотры ≥ X × скользящая медиана (±15 соседних роликов, без роликов моложе 3 дней) и ≥ порога просмотров."""
     from concurrent.futures import ThreadPoolExecutor
     seed_profiles(db)
     profs = db.q("SELECT * FROM profiles WHERE COALESCE(active,1)=1 ORDER BY added")
+    if only is not None:
+        profs = [p for p in profs if p["id"] in only]
     log(f"Профилей на слежке: {len(profs)}")
-    deep_n, deep_days = int(S.get("profile_deep_reels", 300)), int(S.get("profile_deep_days", 365))
+    deep_n, deep_days = int(deep_n or S.get("profile_deep_reels", 300)), int(S.get("profile_deep_days", 365))
     upd_n, upd_days = int(S.get("profile_update_reels", 50)), int(S.get("profile_update_days", 30))
     x_min, floor = float(S.get("profile_outlier_min", 2)), int(S.get("profile_min_views", 100000))
     window, young = int(S.get("profile_window", 15)), int(S.get("profile_young_days", 3))
@@ -1700,6 +1740,10 @@ def run_profiles(db):
             queue.append((p, c))
         all_c += cands
 
+    if not analyze_now:
+        if all_c:
+            refresh_authors(db, all_c)
+        return dict(found=found, new=len(new_ids), analyzed=0, new_ids=new_ids, queue=queue)
     # 4) разбор в 4 потока (запись в базу — в основном потоке)
     queue = queue[:budget]
     log(f"На разбор всего: {len(queue)}")
@@ -1738,6 +1782,204 @@ def run_profiles(db):
     if all_c:
         refresh_authors(db, all_c)
     return dict(found=found, new=len(new_ids), analyzed=analyzed, new_ids=new_ids)
+
+
+# ------------------------------------------------------------------ ВОЛНЫ (массовый сбор топ-аккаунтов)
+CLS_KEYS = ("direction", "direction_extra", "host", "visuals", "moderation_risk")   # берём у модели-классификатора
+
+
+def merge_an(base, cls=None, txt=None, cls_m=None, txt_m=None):
+    """Склейка разборов: тексты (хук, эмоция, субтитры…) — от txt-модели, классификация — от cls-модели.
+    base — уже сохранённый разбор (для дозаполнения второй моделью)."""
+    m = dict(txt or base or cls or {})
+    if txt and base:   # был разбор классификатора — сохраняем его классификацию
+        for k in CLS_KEYS:
+            if base.get(k) not in (None, "", []):
+                m[k] = base[k]
+    if cls:
+        for k in CLS_KEYS:
+            if cls.get(k) not in (None, "", []):
+                m[k] = cls[k]
+        if not (txt or base):
+            m = dict(cls)
+    old = (base or {}).get("_m") or {}
+    m["_m"] = {"cls": cls_m or old.get("cls"), "txt": txt_m or old.get("txt")}
+    if not m.get("subtitles") and base and base.get("subtitles"):
+        m["subtitles"] = base["subtitles"]
+    return m
+
+
+def fresh_links(urls, budget_usd):
+    """Свежие ссылки на видео Instagram (официальный сборщик по прямым ссылкам, ~$0.0023 за ролик) с потолком трат."""
+    n = min(len(urls), int(budget_usd / 0.0027))
+    if n <= 0:
+        return {}, 0.0
+    ac = apify()
+    run = ac.actor("apify/instagram-scraper").call(
+        run_input={"directUrls": urls[:n], "resultsType": "posts", "resultsLimit": 1}, max_items=n)
+    items = list(ac.dataset(_f(run, "defaultDatasetId", "default_dataset_id")).iterate_items())
+    try:
+        cost = float(_f(ac.run(_f(run, "id")).get(), "usageTotalUsd", "usage_total_usd") or 0)
+    except Exception:
+        cost = n * 0.0023
+    out = {}
+    for it in items:
+        sc = it.get("shortCode") or it.get("shortcode")
+        if sc and it.get("videoUrl"):
+            out["ig_" + sc] = it["videoUrl"]
+    log(f"  Свежие ссылки: {len(out)}/{n}, Apify ${cost:.2f}")
+    return out, cost
+
+
+def run_wave(db):
+    """Волна: следующие N аккаунтов из research/wave_list.json → глубокий скан (до wave_reels роликов) →
+    разбор выстрелов двумя моделями, каждая до своего дневного лимита. Остаток — завтра, без повторов."""
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    t0 = time.time()
+    size = int(ENV("RADAR_WAVE") or S.get("wave_size", 25))
+    reels = int(S.get("wave_reels", 300))
+    budget = float(ENV("RADAR_BUDGET") or 0) or float(S.get("wave_budget", 12))
+    m_cls = S.get("wave_cls_model", "gemini-3.1-flash-lite")
+    m_txt = S.get("wave_txt_model", "gemini-3.5-flash-lite")
+    max_min = float(S.get("wave_max_minutes", 300))
+    J = {"date": NOW.strftime("%Y-%m-%d"), "start": NOW.isoformat(timespec="seconds"), "size": size, "budget": budget}
+    spent = 0.0
+
+    # 1) новые аккаунты волны
+    lst = json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", "wave_list.json"), encoding="utf-8"))
+    have = {r["id"] for r in db.q("SELECT id FROM profiles")}
+    todo = [x for x in lst if "ig:" + x["h"].lower() not in have]
+    take = todo[:size]
+    if ENV("RADAR_IGTEST"):          # ручной список ников для пробы
+        take = [{"h": h.strip().lstrip("@")} for h in ENV("RADAR_IGTEST").split(",") if h.strip()]
+    est = len(take) * reels * 0.001
+    if est > budget:
+        take = take[: int(budget / (reels * 0.001))]
+        log(f"Потолок ${budget}: аккаунтов в волне {len(take)}")
+    ids = set()
+    for x in take:
+        add_profile(db, "Instagram", x["h"])
+        pid = "ig:" + x["h"].lower()
+        db.q("UPDATE profiles SET deep=0, active=1, wave=?, followers=COALESCE(followers, ?) WHERE id=?", [J["date"], x.get("f"), pid])
+        ids.add(pid)
+    J["accounts"] = len(ids); J["left_accounts"] = len(todo) - len([x for x in take if x in todo])
+    log(f"Волна {J['date']}: аккаунтов {len(ids)} (осталось в списке после неё {J['left_accounts']}), до {reels} роликов с аккаунта")
+    queue = []
+    if ids:
+        st = run_profiles(db, only=ids, analyze_now=False, deep_n=reels)
+        spent += st["found"] * 0.001   # memo23 ≈ $0.8–1 за 1000 роликов (оценка сверху)
+        J.update(reels=st["found"], new=st["new"])
+        queue = [c for p, c in st["queue"] if c.get("video_url")]
+        log(f"Собрано роликов {st['found']} (≈${spent:.2f}), выстрелов к разбору {len(st['queue'])}, со ссылкой на видео {len(queue)}")
+    queue.sort(key=lambda c: -(c.get("vs_median") or 0))
+    in_q = {c["id"] for c in queue}
+
+    # 2) очередь двух моделей: что ещё не сделано каждой
+    done = {}   # id → (base analysis, set of done roles)
+    state = {"cls": {"model": m_cls, "off": None, "n": 0}, "txt": {"model": m_txt, "off": None, "n": 0}}
+    lock = threading.Lock()
+    J["errors"] = 0
+
+    def roles_left(base):
+        mm = (base or {}).get("_m") or {}
+        return [r for r in ("cls", "txt") if not mm.get(r) and not state[r]["off"]]
+
+    def one(c, base=None):
+        if time.time() - t0 > max_min * 60:
+            return
+        left = roles_left(base)
+        if not left:
+            return
+        vb = fetch_bytes(c["video_url"])
+        if not vb:
+            with lock:
+                J["errors"] += 1
+            return
+        res = {}
+        for role in left:
+            if state[role]["off"]:
+                continue
+            try:
+                a = analyze(c, vb, model=state[role]["model"])
+            except QuotaDay as e:
+                with lock:
+                    if not state[role]["off"]:
+                        state[role]["off"] = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                                              "after": state[role]["n"], "msg": str(e)[:200]}
+                        log(f"  ⛔ {state[role]['model']}: дневной лимит после {state[role]['n']} разборов ({str(e)[:120]})")
+                continue
+            if a:
+                res[role] = a
+                with lock:
+                    state[role]["n"] += 1
+        if not res:
+            return
+        m = merge_an(base, cls=res.get("cls"), txt=res.get("txt"),
+                     cls_m=state["cls"]["model"] if "cls" in res else None, txt_m=state["txt"]["model"] if "txt" in res else None)
+        with lock:
+            upsert_video(db, c, "analyzed", a=m)
+            log(f"  ✓ @{c.get('author')} {c.get('views') or 0:,} ×{c.get('vs_median')} [{'+'.join(sorted(res))}] → {m.get('nutra_score')}/5")
+
+    threads = int(S.get("wave_threads", 6))
+    with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else threads) as ex:
+        list(ex.map(one, queue))
+
+    # 3) хвосты прошлых дней: невыполненные выстрелы и разборы одной моделью — со свежими ссылками, пока есть лимит
+    tail_n = 0
+    tries = json.loads((db.q("SELECT v FROM kv WHERE k='wave_tries'") or [{"v": "{}"}])[0]["v"] or "{}")
+    for rnd in range(20):
+        if (state["cls"]["off"] and state["txt"]["off"]) or time.time() - t0 > max_min * 60 or budget - spent < 0.3:
+            break
+        rows = db.q("""SELECT id, url, author, author_id, platform, vertical, duration, views, likes, comments, shares, vs_median, status,
+                              analysis, subtitles FROM videos
+                       WHERE source='profile' AND platform='Instagram' AND (status='queued'
+                          OR (status='analyzed' AND json_extract(analysis,'$._m') IS NOT NULL
+                              AND (json_extract(analysis,'$._m.cls') IS NULL OR json_extract(analysis,'$._m.txt') IS NULL)))
+                       ORDER BY CASE WHEN status='queued' THEN 0 ELSE 1 END, vs_median DESC LIMIT 400""")
+        rows = [r for r in rows if r["id"] not in in_q]
+        rows = [r for r in rows if roles_left(json.loads(r["analysis"]) if r["status"] == "analyzed" and r["analysis"] else None)][:100]
+        if not rows:
+            break
+        links, cost = fresh_links([r["url"] for r in rows], min(budget - spent, 0.3))
+        spent += cost
+        jobs = []
+        for r in rows:
+            in_q.add(r["id"])
+            if r["id"] not in links:
+                tries[r["id"]] = tries.get(r["id"], 0) + 1
+                if tries[r["id"]] >= 3:   # 3 попытки — дальше не тратим деньги
+                    if r["status"] == "queued":
+                        db.q("UPDATE videos SET status='profile_rest' WHERE id=?", [r["id"]])
+                    else:
+                        db.q("""UPDATE videos SET analysis=json_set(analysis, '$._m.cls', COALESCE(json_extract(analysis,'$._m.cls'),'нет'),
+                                '$._m.txt', COALESCE(json_extract(analysis,'$._m.txt'),'нет')) WHERE id=?""", [r["id"]])
+                    J["gave_up"] = J.get("gave_up", 0) + 1
+                continue
+            base = None
+            if r["status"] == "analyzed":
+                base = json.loads(r["analysis"] or "{}")
+                base["subtitles"] = json.loads(r["subtitles"] or "[]") if isinstance(r["subtitles"], str) else (r["subtitles"] or [])
+            c = dict(r, raw_id=r["id"][3:], video_url=links[r["id"]])
+            c.pop("analysis", None); c.pop("subtitles", None)
+            jobs.append((c, base))
+        with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else threads) as ex:
+            list(ex.map(lambda cb: one(*cb), jobs))
+        tail_n += len(jobs)
+
+    db.q("INSERT OR REPLACE INTO kv VALUES ('wave_tries', ?)", [json.dumps(tries)])
+    left = db.q("""SELECT COUNT(*) n FROM videos WHERE source='profile' AND status='queued'""")[0]["n"]
+    part = db.q("""SELECT COUNT(*) n FROM videos WHERE status='analyzed' AND json_extract(analysis,'$._m') IS NOT NULL
+                   AND (json_extract(analysis,'$._m.cls') IS NULL OR json_extract(analysis,'$._m.txt') IS NULL)""")[0]["n"]
+    J.update(shots_fresh=len(queue), tail=tail_n, done_cls=state["cls"]["n"], done_txt=state["txt"]["n"],
+             quota_cls=state["cls"]["off"], quota_txt=state["txt"]["off"], left_queued=left, left_partial=part,
+             apify_usd=round(spent, 2), minutes=round((time.time() - t0) / 60))
+    jr = json.loads((db.q("SELECT v FROM kv WHERE k='wave_journal'") or [{"v": "[]"}])[0]["v"] or "[]")
+    jr.append(J)
+    db.q("INSERT OR REPLACE INTO kv VALUES ('wave_journal', ?)", [json.dumps(jr, ensure_ascii=False)])
+    log("ЖУРНАЛ ВОЛНЫ: " + json.dumps(J, ensure_ascii=False))
+    print("WAVEJSON_BEGIN"); print(json.dumps(J, ensure_ascii=True)); print("WAVEJSON_END")
+    return dict(found=J.get("reels", 0), new=J.get("new", 0), analyzed=state["cls"]["n"] + state["txt"]["n"], new_ids=set())
 
 
 # ------------------------------------------------------------------ ГЛАВНОЕ
@@ -1849,7 +2091,8 @@ def main():
                   "ALTER TABLE videos ADD COLUMN directions TEXT", "ALTER TABLE videos ADD COLUMN dir_v INTEGER",
                   "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN visual TEXT",
                   "ALTER TABLE videos ADD COLUMN visuals TEXT", "ALTER TABLE videos ADD COLUMN vis_v INTEGER",
-                  "ALTER TABLE profiles ADD COLUMN bio TEXT", "ALTER TABLE profiles ADD COLUMN ext_url TEXT"):
+                  "ALTER TABLE profiles ADD COLUMN bio TEXT", "ALTER TABLE profiles ADD COLUMN ext_url TEXT",
+                  "ALTER TABLE profiles ADD COLUMN wave TEXT"):
         try:
             db.q(alter)
         except Exception:
@@ -1935,6 +2178,12 @@ def main():
         log(f"В базе роликов из профилей: {n}")
         log("Профили:", [(p["id"], p.get("reels"), p.get("deep"), p.get("status")) for p in db.q("SELECT * FROM profiles")])
         ig_test()
+        return
+    if ENV("RADAR_MODE") == "wave":
+        stats = run_wave(db)
+        db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), stats["found"], stats["new"],
+             stats["analyzed"], 0, "\n".join(LOG)[-20000:]])
+        db_size(db)
         return
     if ENV("RADAR_MODE") == "profiles":
         stats = run_profiles(db)

@@ -2,8 +2,8 @@ name: radar
 
 on:
   # Расписание выключено. Чтобы включить обновление профилей раз в 3 дня — уберите # у двух строк ниже.
-  # schedule:
-  #   - cron: "23 4 */3 * *"
+  schedule:
+    - cron: "5 8 * * *"      # волна каждый день в 11:05 МСК (после обнуления дневного лимита Gemini). Выключить — закомментировать две строки
   workflow_dispatch:         # кнопка «Run workflow» для ручного запуска
     inputs:
       mode:
@@ -18,6 +18,9 @@ on:
       igtest:
         description: "Тест сборщиков Instagram (через запятую)"
         default: ""
+      wave:
+        description: "Волна: сколько аккаунтов взять (пусто = 25)"
+        default: ""
       max_analyze:
         description: "Сколько роликов разобрать за запуск (пусто = из настроек)"
         default: ""
@@ -25,7 +28,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,11 +44,12 @@ jobs:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RADAR_MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'profiles') || 'full' }}
+          RADAR_MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'wave') || 'full' }}
           RADAR_MAX_ANALYZE: ${{ inputs.max_analyze }}
           RADAR_IMPORT_RUN: ${{ inputs.import_run }}
           RADAR_IGTEST: ${{ inputs.igtest }}
           RADAR_BUDGET: ${{ inputs.budget }}
+          RADAR_WAVE: ${{ inputs.wave }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
