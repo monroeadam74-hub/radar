@@ -69,7 +69,7 @@ async function api(req, env, url) {
     // scope=main — всё, кроме «не выстрелов» профилей (облегчённый разбор: только поля для списка и фильтров);
     // scope=rest — «не выстрелы» профилей по поиску (q) — догружаются по запросу
     const scope = url.searchParams.get("scope") || "main";
-    const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+    const q = (url.searchParams.get("q") || "").trim().toLowerCase().replace(/^@+/, "");
     const slim = `json_object('hook_0_3s', json_extract(v.analysis,'$.hook_0_3s'), 'hook_type', json_extract(v.analysis,'$.hook_type'),
         'cta', json_extract(v.analysis,'$.cta'), 'cta_mechanic', json_extract(v.analysis,'$.cta_mechanic'),
         'tech', json_extract(v.analysis,'$.tech'))`;

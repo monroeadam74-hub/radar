@@ -225,7 +225,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
-let CNT={}, REST_Q=null, V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, hosts:new Set(), vis:new Set(), queue:"all", src:"all", dir:1};
+let CNT={}, REST_Q=null, REST_LOAD=false, V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, hosts:new Set(), vis:new Set(), queue:"all", src:"all", dir:1};
 const HOSTS=[["doctor","Врач / эксперт"],["sage","Мудрец-архетип"],["elder","Бабушка / дед / фермер"],["person","Обычный человек / UGC"],["none","Без ведущего"],["unk","Не размечено"]];
 const VISS=[["talking","Говорящая голова"],["pointer","«Указка на тело»"],["shock","Шок-крупный план"],["anatomy","3D-анатомия"],["beforeafter","До / после на экране"],["prop","Предмет в руке + вопрос"],["experiment","Наглядный опыт"],["recipe","Рецепт / приготовление"],["exercise","Упражнение"],["clinic","Клиника / процедура"],["rating","Рейтинг / обзор"],["product","Товар / распаковка / ASMR"],["humor","Юмор / скетч / POV"],["slides","Слайды / текст на фоне"],["unk","Не размечено"]];
 const HOSTN=Object.fromEntries(HOSTS),VISN=Object.fromEntries(VISS);
@@ -290,23 +290,24 @@ function renderQueues(){
   const B=filtered({noQueue:true});
   const cnt={all:B.filter(x=>!x.hidden).length,none:B.filter(x=>!x.hidden&&!x.label).length,good:B.filter(x=>!x.hidden&&x.label==="good").length,bad:B.filter(x=>!x.hidden&&x.label==="bad").length,hidden:B.filter(x=>x.hidden).length};
   const S2=filtered({noStatus:true}), sc={}; S2.forEach(x=>sc[x.status]=(sc[x.status]||0)+1);
-  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_Q===null?(CNT.profile_rest||0):o.value?(sc[o.value]||0):S2.length);});
+  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_LOAD?"загружаю…":o.value==="profile_rest"&&(REST_Q===null||REST_Q==="")&&!$("q").value.trim()?(CNT.profile_rest||0):o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
 function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,hosts:new Set(),vis:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
 ["fv","fs","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();restMaybe();});
 let _rt=null;
 function restMaybe(){clearTimeout(_rt);_rt=setTimeout(async()=>{
-  const q=$("q").value.trim().toLowerCase(), need=$("fs").value==="profile_rest"||q.length>=3;
+  const q=$("q").value.trim().toLowerCase().replace(/^@+/,""), need=$("fs").value==="profile_rest"||q.length>=3;
   if(!need||REST_Q===q)return;
+  REST_LOAD=true;renderQueues();if($("fs").value==="profile_rest")renderList();
   try{const r=await api("/api/videos?scope=rest&q="+encodeURIComponent(q));const have=new Set(V.map(x=>x.id));
-    V=V.filter(x=>x.status!=="profile_rest").concat((r.videos||[]).filter(x=>!have.has(x.id)||true).filter(x=>x.status==="profile_rest"));REST_Q=q;renderList();}catch{}
+    V=V.filter(x=>x.status!=="profile_rest").concat((r.videos||[]).filter(x=>!have.has(x.id)||true).filter(x=>x.status==="profile_rest"));REST_Q=q;}catch{toast("Не удалось загрузить «не выстрелы» — попробуйте ещё раз");}REST_LOAD=false;renderList();
 },350);}
 $("so").onchange=()=>{F.dir=$("so").value==="author"?-1:1;limit=150;renderList();};
 $("q").oninput=()=>{limit=150;renderList();restMaybe();};
 
 function filtered(opt={}){
-  const fv=$("fv").value,fs=$("fs").value,so=$("so").value,q=$("q").value.toLowerCase(),yt=$("pYT").checked,tt=$("pTT").checked,ig=$("pIG").checked;
+  const fv=$("fv").value,fs=$("fs").value,so=$("so").value,q=$("q").value.trim().toLowerCase().replace(/^@+/,""),yt=$("pYT").checked,tt=$("pTT").checked,ig=$("pIG").checked;
   let r=V.filter(c=>{
     if(!opt.noQueue){
     if(F.queue==="hidden"){if(!c.hidden)return false;}else if(c.hidden)return false;
@@ -351,7 +352,7 @@ function renderList(){
   LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderAxis("hostBox",HOSTS,F.hosts,hostOf,"noHost","togHost"); renderAxis("visBox",VISS,F.vis,visOf,"noVis","togVis"); updSums(); renderSrc(); renderHead();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
-  $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
+  $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${REST_LOAD&&$("fs").value==="profile_rest"?"Загружаю «не выстрелы» профилей…":V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
   $("moreBtn").style.display=LIST.length>shown.length?"inline-block":"none";
 }
 function row(c){
