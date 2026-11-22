@@ -727,9 +727,19 @@ def save_thumb(db, vid, src):
 
 
 def _ts(v):
+    """Время публикации в UTC с часами (для «Сводки»: день недели × час по ET). Только дата — если времени нет."""
     if isinstance(v, (int, float)):
-        return dt.datetime.fromtimestamp(v, dt.timezone.utc).strftime("%Y-%m-%d")
-    return str(v)[:10] if v else None
+        return dt.datetime.fromtimestamp(v / 1000 if v > 1e11 else v, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if not v:
+        return None
+    s_ = str(v)
+    try:
+        d_ = dt.datetime.fromisoformat(s_.replace("Z", "+00:00"))
+        if d_.tzinfo and len(s_) > 10:
+            return d_.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        pass
+    return s_[:10]
 
 
 def _ig_item(it, handle=None):
@@ -1314,7 +1324,7 @@ def enrich_from_runs(db):
     """Бесплатно: перечитать уже оплаченные запуски дешёвого сборщика рилсов и дописать репосты, лайки, комментарии,
     шапку и ссылку из шапки авторов (раньше не сохранялись)."""
     ac = apify()
-    runs = _f(ac.actor(S.get("ig_actor", "memo23/instagram-reel-scraper")).runs().list(desc=True, limit=30), "items") or []
+    runs = _f(ac.actor(S.get("ig_actor", "memo23/instagram-reel-scraper")).runs().list(desc=True, limit=60), "items") or []
     items = []
     for r in runs:
         if not str(_f(r, "status")).endswith("SUCCEEDED"):
@@ -1338,7 +1348,8 @@ def enrich_from_runs(db):
     for i in range(0, len(ch_all), 100):
         ch = ch_all[i:i + 100]
         cs = lambda k: " ".join(f"WHEN {lit(c['id'])} THEN {lit(c.get(k))}" for c in ch)
-        db.q(f"UPDATE videos SET shares = COALESCE(CASE id {cs('shares')} END, shares), likes = COALESCE(CASE id {cs('likes')} END, likes), "
+        db.q(f"UPDATE videos SET published = COALESCE(CASE id {cs('published')} END, published), "
+             f"shares = COALESCE(CASE id {cs('shares')} END, shares), likes = COALESCE(CASE id {cs('likes')} END, likes), "
              f"comments = COALESCE(CASE id {cs('comments')} END, comments) WHERE id IN ({','.join(lit(c['id']) for c in ch)})")
     for pid, (bio, ext) in prof.items():
         db.q("UPDATE profiles SET bio=COALESCE(?, bio), ext_url=COALESCE(?, ext_url) WHERE id=?", [bio, ext, pid])
@@ -1904,7 +1915,7 @@ def run_wave(db):
     state = {"cls": {"model": m_cls, "off": None, "n": 0, "client": None}, "txt": {"model": m_txt, "off": None, "n": 0, "client": None}}
     # платный ключ (отдельный проект Google с оплатой) — только для модели-классификатора; 3.5 остаётся на бесплатном
     paid_cap = float(S.get("wave_paid_usd", 35))
-    paid_max = int(paid_cap / 0.0025)        # потолок по числу разборов (оценка сверху ~$0.0025 за разбор 3.1)
+    paid_max = int(paid_cap / 0.0045)        # потолок по числу разборов (факт 22.11: ~$0.0043 за разбор 3.1)
     if ENV("GEMINI_KEY_PAID"):
         from google import genai
         from google.genai import types as _t
