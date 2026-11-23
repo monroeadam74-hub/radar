@@ -157,12 +157,24 @@ def apify():
     return ApifyClient(ENV("APIFY_TOKEN"))
 
 
-def run_actor(actor, run_input, max_items=None):
+def run_actor(actor, run_input, max_items=None, timeout_secs=None):
+    """Запуск актора Apify. timeout_secs — сколько актор может работать (у memo23 по умолчанию ~15 мин,
+    и при 50 аккаунтах он обрывался, недособрав часть профилей)."""
+    import datetime as _d
     ac = apify()
-    try:
-        run = ac.actor(actor).call(run_input=run_input, **({"max_items": int(max_items)} if max_items else {}))
-    except TypeError:   # старый клиент без max_items
-        run = ac.actor(actor).call(run_input=run_input)
+    kw = {"max_items": int(max_items)} if max_items else {}
+    tries = []
+    if timeout_secs:
+        tries = [dict(kw, timeout_secs=int(timeout_secs)), dict(kw, timeout=_d.timedelta(seconds=int(timeout_secs)))]
+    tries += [kw, {}]
+    for i, k in enumerate(tries):
+        try:
+            run = ac.actor(actor).call(run_input=run_input, **k)
+            if timeout_secs and i >= 2:
+                log("  ⚠ не удалось задать время работы актора — возможен обрыв по его стандартному лимиту")
+            break
+        except TypeError:
+            continue
     ds = run.get("defaultDatasetId") if isinstance(run, dict) else getattr(run, "default_dataset_id", None)
     return list(ac.dataset(ds).iterate_items())
 
@@ -249,6 +261,10 @@ class QuotaDay(Exception):
     """Дневной лимит модели исчерпан."""
 
 
+class QuotaMinute(Exception):
+    """Поминутный лимит: пропустить этот запрос, модель не выключать."""
+
+
 def ask_model(contents, label, model, client=None):
     """Один вызов конкретной модели (без запасных). 429 «в день» → QuotaDay; 429 «в минуту» и 503 → пауза и повтор."""
     from google.genai import types
@@ -276,6 +292,8 @@ def ask_model(contents, label, model, client=None):
                 if re.search(r"PerDay|per day|daily", msg, re.I):
                     raise QuotaDay(f"[{qid}] " + msg[:300])
                 if attempt >= 4:
+                    if "PerMinute" in qid:
+                        raise QuotaMinute(qid)
                     raise QuotaDay(f"постоянный 429 [{qid}]: " + msg[:250])
                 time.sleep(20 + 20 * attempt)
                 continue
@@ -781,7 +799,16 @@ def fetch_instagram(profs, limit, since=None):
         if since and not actor.startswith("apify/"):
             inp["onlyPostsNewerThan"] = since
         try:
-            items = run_actor(actor, inp, max_items=len(handles) * int(limit))   # предохранитель: не больше заказанного
+            items = []
+            per = int(S.get("ig_batch", 12))   # пачками: один запуск актора на ~12 аккаунтов, у каждого свой лимит времени
+            for b0 in range(0, len(handles), per):
+                hb = handles[b0:b0 + per]
+                ib = IG_ACTOR_INPUT.get(actor, IG_ACTOR_INPUT["scrapesmith/instagram-reels-scraper"])(hb, int(limit))
+                if since and not actor.startswith("apify/"):
+                    ib["onlyPostsNewerThan"] = since
+                got_b = run_actor(actor, ib, max_items=len(hb) * int(limit), timeout_secs=int(S.get("ig_timeout", 3000)))
+                log(f"  Instagram: пачка {b0 // per + 1} ({len(hb)} акк.) → {len(got_b)} роликов")
+                items += got_b
         except Exception as e:
             log(f"  Instagram: сборщик {actor} упал: {str(e)[:150]}"); items = []
         ok = [it for it in items if _ig_item(it)]
@@ -1874,7 +1901,7 @@ def run_wave(db):
     t0 = time.time()
     size = int(ENV("RADAR_WAVE") or S.get("wave_size", 50 if ENV("GEMINI_KEY_PAID") else 25))
     reels = int(S.get("wave_reels", 300))
-    budget = float(ENV("RADAR_BUDGET") or 0) or float(S.get("wave_budget", 20))
+    budget = float(ENV("RADAR_BUDGET") or 0) or float(S.get("wave_budget", 30))
     m_cls = S.get("wave_cls_model", "gemini-3.1-flash-lite")
     m_txt = S.get("wave_txt_model", "gemini-3.5-flash-lite")
     max_min = float(S.get("wave_max_minutes", 300))
@@ -1885,14 +1912,31 @@ def run_wave(db):
     lst = json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", "wave_list.json"), encoding="utf-8"))
     have = {r["id"] for r in db.q("SELECT id FROM profiles")}
     todo = [x for x in lst if "ig:" + x["h"].lower() not in have]
+    # добор: аккаунты прошлых волн, которые сборщик не досканировал (обрыв актора по времени 23.11) — один раз
+    redone = set(json.loads((db.q("SELECT v FROM kv WHERE k='wave_redone'") or [{"v": "[]"}])[0]["v"] or "[]"))
+    redo = [r for r in db.q("""SELECT id, handle, followers FROM profiles WHERE wave IS NOT NULL AND platform='Instagram'
+                               AND (COALESCE(deep,0)=0 OR COALESCE(reels,0) < ?)""", [int(S.get("wave_redo_min", 100))])
+            if r["id"] not in redone]
+    if redo and not ENV("RADAR_IGTEST"):
+        log(f"Добор недособранных аккаунтов прошлых волн: {len(redo)}")
+        size = max(0, size - len(redo)) if ENV("RADAR_WAVE") else size
     take = todo[:size]
     if ENV("RADAR_IGTEST"):          # ручной список ников для пробы
         take = [{"h": h.strip().lstrip("@")} for h in ENV("RADAR_IGTEST").split(",") if h.strip()]
-    est = len(take) * reels * 0.001
+    if ENV("RADAR_IGTEST"):
+        redo = []
+    redo = redo[: int(budget / (reels * 0.001))]
+    est = (len(take) + len(redo)) * reels * 0.001
     if est > budget:
-        take = take[: int(budget / (reels * 0.001))]
-        log(f"Потолок ${budget}: аккаунтов в волне {len(take)}")
+        take = take[: max(0, int(budget / (reels * 0.001)) - len(redo))]
+        log(f"Потолок ${budget}: новых аккаунтов в волне {len(take)}, добор {len(redo)}")
     ids = set()
+    for r in redo:
+        db.q("UPDATE profiles SET deep=0, active=1 WHERE id=?", [r["id"]])
+        ids.add(r["id"])
+    if redo:
+        db.q("INSERT OR REPLACE INTO kv VALUES ('wave_redone', ?)", [json.dumps(sorted(redone | {r["id"] for r in redo}))])
+    J["redo"] = len(redo)
     for x in take:
         add_profile(db, "Instagram", x["h"])
         pid = "ig:" + x["h"].lower()
@@ -1948,6 +1992,12 @@ def run_wave(db):
         for role in left:
             if state[role]["off"]:
                 continue
+            if role == "txt":   # бесплатная 3.5: не чаще одного запроса в wave_txt_gap сек, без ожидания — иначе пропуск (допишется позже)
+                with lock:
+                    now_ = time.time()
+                    if now_ < state["txt"].get("next", 0):
+                        continue
+                    state["txt"]["next"] = now_ + float(S.get("wave_txt_gap", 6))
             if role == "cls" and paid_used is not None and paid_used + state["cls"]["n"] >= paid_max:
                 with lock:
                     if not state["cls"]["off"]:
@@ -1957,6 +2007,11 @@ def run_wave(db):
                 continue
             try:
                 a = analyze(c, vb, model=state[role]["model"], client=state[role]["client"])
+            except QuotaMinute:
+                with lock:
+                    state[role]["next"] = time.time() + 60
+                    state[role]["minute_hits"] = state[role].get("minute_hits", 0) + 1
+                continue
             except QuotaDay as e:
                 with lock:
                     if not state[role]["off"]:
@@ -1976,7 +2031,7 @@ def run_wave(db):
             upsert_video(db, c, "analyzed", a=m)
             log(f"  ✓ @{c.get('author')} {c.get('views') or 0:,} ×{c.get('vs_median')} [{'+'.join(sorted(res))}] → {m.get('nutra_score')}/5")
 
-    threads = int(S.get("wave_threads", 16 if ENV("GEMINI_KEY_PAID") else 10))
+    threads = int(S.get("wave_threads", 24 if ENV("GEMINI_KEY_PAID") else 10))
     with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else threads) as ex:
         list(ex.map(one, queue))
 
