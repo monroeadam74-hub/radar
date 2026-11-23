@@ -148,6 +148,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <button data-v="authors">Профили</button>
     <button data-v="settings">Настройки</button>
     <button data-v="runs">Запуски</button>
+    <button data-v="access" id="navAccess" style="display:none">Доступ</button>
   </nav>
   <label class="search"><span style="position:absolute;left:-9999px">Поиск</span><input id="q" placeholder="Поиск: автор, хук, подпись, ключ…"></label>
   <button class="btn" onclick="logout()" title="Выйти из радара" style="margin-left:8px">Выйти</button>
@@ -212,6 +213,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 
 <section class="view" id="v_summary"><div class="pad" id="sumbox"></div></section>
 <section class="view" id="v_settings"><div class="pad" id="setbox"></div></section>
+<section class="view" id="v_access"><div class="pad" id="accbox"></div></section>
 
 <section class="view" id="v_runs"><div class="pad">
   <div class="panel"><h3>Запуск</h3>
@@ -246,12 +248,40 @@ function toast(t){const el=$("toast");el.textContent=t;el.style.display="block";
 async function api(path,body){const r=await fetch(path,body?{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}:{});if(r.status===401){showLogin();throw new Error("auth");}return r.json();}
 function showLogin(){$("app").style.display="none";$("loginBox").style.display="block";}
 async function login(){const r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({login:$("lg").value,password:$("pw").value})});if(r.ok){$("loginBox").style.display="none";start();}else $("loginErr").textContent="Неверный логин или пароль";}
+let ME={};
+async function loadMe(){try{ME=await api("/api/me");$("navAccess").style.display=ME.admin&&!ME.open?"":"none";}catch{}}
+async function loadAccess(){
+  let r; try{r=await api("/api/users");}catch(x){$("accbox").innerHTML=`<div class="panel">Нет доступа</div>`;return;}
+  const fd=d=>d?new Date(d).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
+  const rows=(r.users||[]).map(u=>`<tr><td><b>${e(u.login)}</b></td><td>${u.role==="admin"?"админ":"пользователь"}</td><td>${e(u.note||"")}</td><td>${fd(u.created)}</td><td>${fd(u.last_login)}</td>
+    <td style="white-space:nowrap"><button class="btn" onclick="accEdit('${e(u.login)}','${u.role}',${JSON.stringify(e(u.note||"")).replace(/"/g,"&quot;")})">Изменить</button> <button class="btn" onclick="accDel('${e(u.login)}')">Удалить</button></td></tr>`).join("");
+  $("accbox").innerHTML=`<div class="panel"><h3>Пользователи радара</h3>
+    <p class="muted" style="margin:0 0 10px">Администраторы из секрета GitHub (меняются только там): <b>${e((r.admins||[]).join(", ")||"—")}</b>. Пароли ниже хранятся в базе только в виде хеша — посмотреть их нельзя, только задать новый.</p>
+    <table class="tbl" style="width:100%"><thead><tr><th>Логин</th><th>Роль</th><th>Заметка</th><th>Создан</th><th>Последний вход</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="6" class="muted">Пока никого — добавьте ниже</td></tr>`}</tbody></table></div>
+  <div class="panel"><h3 id="accTitle">Добавить пользователя</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+      ${[["acc_l","Логин","латиница, цифры, . _ - @",`<input id="acc_l" autocomplete="off" style="width:100%">`],
+         ["acc_p","Пароль","от 8 символов; при изменении пусто = не менять",`<input id="acc_p" autocomplete="new-password" style="width:100%">`],
+         ["acc_r","Роль","админ: запуски, настройки, профили, доступ",`<select id="acc_r" style="width:100%"><option value="user">пользователь: смотрит и размечает</option><option value="admin">админ</option></select>`],
+         ["acc_n","Заметка","кто это",`<input id="acc_n" style="width:100%">`]]
+        .map(([id,l,h,inp])=>`<div style="display:flex;flex-direction:column;gap:4px"><label for="${id}" style="font-weight:600">${l}</label>${inp}<small class="muted">${h}</small></div>`).join("")}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" onclick="$('acc_p').value=genPw()">Сгенерировать пароль</button><button class="btn pri" onclick="accSave()">Сохранить</button><button class="btn" onclick="loadAccess()">Очистить</button></div>
+    <p class="muted" style="margin:10px 0 0">Сгенерированный пароль скопируйте и передайте человеку сразу — после сохранения его не будет видно.</p></div>`;
+}
+function genPw(){const a="abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";const b=crypto.getRandomValues(new Uint32Array(14));return [...b].map(x=>a[x%a.length]).join("");}
+function accEdit(l,r,n){$("acc_l").value=l;$("acc_l").readOnly=true;$("acc_r").value=r;$("acc_n").value=n;$("acc_p").value="";$("accTitle").textContent="Изменить: "+l;$("acc_p").focus();}
+async function accSave(){const b={login:$("acc_l").value,password:$("acc_p").value,role:$("acc_r").value,note:$("acc_n").value};
+  const r=await fetch("/api/users",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)}).then(x=>x.json()).catch(()=>({ok:false,error:"Сеть"}));
+  if(r.ok){toast("Сохранено");loadAccess();}else toast(r.error||"Ошибка");}
+async function accDel(l){if(!confirm("Удалить пользователя "+l+"? Он сразу потеряет доступ."))return;
+  const r=await fetch("/api/users?login="+encodeURIComponent(l),{method:"DELETE"}).then(x=>x.json());if(r.ok){toast("Удалён");loadAccess();}else toast(r.error||"Ошибка");}
 async function logout(){await fetch("/api/logout");location.reload();}
 
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("on",x===b));
   document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.id==="v_"+b.dataset.v));
-  if(b.dataset.v==="summary")renderSummary(); if(b.dataset.v==="authors")loadAuthors(); if(b.dataset.v==="settings")loadSettings(); if(b.dataset.v==="runs")loadRuns();
+  if(b.dataset.v==="summary")renderSummary(); if(b.dataset.v==="authors")loadAuthors(); if(b.dataset.v==="settings")loadSettings(); if(b.dataset.v==="runs")loadRuns(); if(b.dataset.v==="access")loadAccess();
 });
 
 const QUEUES=[["all","Все"],["none","Неразмеченные"],["good","Нужно"],["bad","Мусор"],["hidden","Скрытые"]];
@@ -642,7 +672,7 @@ async function runNow(mode){$("runmsg").textContent="Запускаю…";const 
 
 async function start(){
   try{const r=await api("/api/videos?scope=main");V=r.videos||[];CNT=r.counts||{};}catch(err){return;}
-  $("app").style.display="block"; buildSide(); renderList(); loadProfiles();
+  $("app").style.display="block"; buildSide(); renderList(); loadProfiles(); loadMe();
   if(LIST[0])select(LIST[0].id,false);
 }
 start();

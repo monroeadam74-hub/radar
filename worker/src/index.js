@@ -8,6 +8,7 @@ const SCHEMA = [
      reels INTEGER, median_views INTEGER, best_x REAL, shots INTEGER, new_last INTEGER,
      status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1)`,
   "CREATE TABLE IF NOT EXISTS funnels (url TEXT PRIMARY KEY, profile_id TEXT, final_url TEXT, status TEXT, data TEXT, ts TEXT)",
+  "CREATE TABLE IF NOT EXISTS users (login TEXT PRIMARY KEY, salt TEXT, hash TEXT, role TEXT, note TEXT, created TEXT, last_login TEXT)",
 ];
 
 const json = (data, status = 200, headers = {}) =>
@@ -30,14 +31,27 @@ function users(env) {
 }
 const tokenFor = (login, pass) => sha(login + "|" + pass + "|radar");
 
-async function authed(req, env) {
-  const U = users(env);
-  if (!Object.keys(U).length) return true; // доступ не настроен — открыто
-  const m = (req.headers.get("cookie") || "").match(/radar_auth=([a-z0-9._@-]*)\.([a-f0-9]{64})/i);
-  if (!m) return false;
-  const login = m[1].toLowerCase();
-  return login in U && m[2] === (await tokenFor(login, U[login]));
+// Пароль пользователя из раздела «Доступ»: PBKDF2-SHA256, 100 000 итераций, своя соль у каждого
+const hex = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+async function pbkdf2(pass, salt) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveBits"]);
+  return hex(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: new TextEncoder().encode(salt), iterations: 100000 }, k, 256));
 }
+
+// Кто вошёл: {login, admin} или null. Админы — логины из секрета APP_USERS; остальные — из таблицы users.
+async function who(req, env) {
+  const U = users(env);
+  if (!Object.keys(U).length) return { login: "", admin: true, open: true }; // доступ не настроен — открыто
+  const m = (req.headers.get("cookie") || "").match(/radar_auth=([a-z0-9._@-]*)\.([a-f0-9]{64})/i);
+  if (!m) return null;
+  const login = m[1].toLowerCase();
+  if (login in U) return m[2] === (await tokenFor(login, U[login])) ? { login, admin: true } : null;
+  await ensure(env);
+  const u = await env.DB.prepare("SELECT login, hash, role FROM users WHERE login=?").bind(login).first();
+  if (!u || m[2] !== (await tokenFor(login, u.hash))) return null;
+  return { login, admin: u.role === "admin" };
+}
+const authed = async (req, env) => !!(await who(req, env));
 
 let ensured = false;
 async function ensure(env) {
@@ -69,12 +83,19 @@ async function api(req, env, url) {
   if (p === "/api/login" && req.method === "POST") {
     const b = await req.json().catch(() => ({}));
     const U = users(env), login = String(b.login || "").trim().toLowerCase(), pass = String(b.password || "");
+    const ok = (key, secret) => tokenFor(key, secret).then((tok) => json({ ok: true }, 200, {
+      "set-cookie": `radar_auth=${key}.${tok}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
+    }));
+    if (!Object.keys(U).length) return ok("", "");
     const key = "" in U ? "" : login;
-    if (!Object.keys(U).length || (key in U && U[key] === pass)) {
-      const tok = await tokenFor(key, U[key] || "");
-      return json({ ok: true }, 200, {
-        "set-cookie": `radar_auth=${key}.${tok}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`,
-      });
+    if (key in U && U[key] === pass) return ok(key, U[key]);
+    if (login && /^[a-z0-9._@-]{2,40}$/.test(login)) {
+      await ensure(env);
+      const u = await env.DB.prepare("SELECT login, salt, hash FROM users WHERE login=?").bind(login).first();
+      if (u && (await pbkdf2(pass, u.salt)) === u.hash) {
+        await env.DB.prepare("UPDATE users SET last_login=? WHERE login=?").bind(new Date().toISOString(), login).run();
+        return ok(login, u.hash);
+      }
     }
     await new Promise((r) => setTimeout(r, 1200)); // замедление подбора
     return json({ ok: false, error: "Неверный логин или пароль" }, 401);
@@ -82,8 +103,53 @@ async function api(req, env, url) {
   if (p === "/api/logout") {
     return json({ ok: true }, 200, { "set-cookie": "radar_auth=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" });
   }
-  if (!(await authed(req, env))) return json({ error: "auth" }, 401);
+  const me = await who(req, env);
+  if (!me) return json({ error: "auth" }, 401);
+  if (p === "/api/me") return json({ login: me.login, admin: me.admin, open: !!me.open });
+
+  // «Доступ»: управление пользователями (только админы)
+  if (p === "/api/users") {
+    if (!me.admin) return json({ error: "Только для администратора" }, 403);
+    await ensure(env);
+    if (req.method === "GET") {
+      const r = await env.DB.prepare("SELECT login, role, note, created, last_login FROM users ORDER BY created").all();
+      return json({ users: r.results || [], admins: Object.keys(users(env)).filter(Boolean) });
+    }
+    if (req.method === "POST") {
+      const b = await req.json().catch(() => ({}));
+      const login = String(b.login || "").trim().toLowerCase(), pass = String(b.password || "");
+      const role = b.role === "admin" ? "admin" : "user", note = String(b.note || "").slice(0, 200);
+      if (!/^[a-z0-9._@-]{2,40}$/.test(login)) return json({ ok: false, error: "Логин: 2–40 символов, латиница, цифры, . _ - @" }, 400);
+      if (login in users(env)) return json({ ok: false, error: "Этот логин задан в секрете GitHub — меняйте его там" }, 400);
+      const ex = await env.DB.prepare("SELECT login FROM users WHERE login=?").bind(login).first();
+      if (!ex && pass.length < 8) return json({ ok: false, error: "Пароль — минимум 8 символов" }, 400);
+      if (pass && pass.length < 8) return json({ ok: false, error: "Пароль — минимум 8 символов" }, 400);
+      if (ex) {
+        if (pass) {
+          const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+          await env.DB.prepare("UPDATE users SET salt=?, hash=?, role=?, note=? WHERE login=?").bind(salt, await pbkdf2(pass, salt), role, note, login).run();
+        } else {
+          await env.DB.prepare("UPDATE users SET role=?, note=? WHERE login=?").bind(role, note, login).run();
+        }
+      } else {
+        const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+        await env.DB.prepare("INSERT INTO users VALUES (?,?,?,?,?,?,NULL)").bind(login, salt, await pbkdf2(pass, salt), role, note, new Date().toISOString()).run();
+      }
+      return json({ ok: true });
+    }
+    if (req.method === "DELETE") {
+      const login = String(url.searchParams.get("login") || "").toLowerCase();
+      if (login === me.login) return json({ ok: false, error: "Нельзя удалить самого себя" }, 400);
+      await env.DB.prepare("DELETE FROM users WHERE login=?").bind(login).run();
+      return json({ ok: true });
+    }
+  }
   await ensure(env);
+
+  // обычный пользователь — только смотрит и размечает; запуски, настройки и профили — админ (это траты денег)
+  const adminOnly = (p === "/api/run") || (p === "/api/settings" && req.method === "POST") ||
+    (p.startsWith("/api/profiles") && req.method === "POST");
+  if (adminOnly && !me.admin) return json({ ok: false, error: "Только для администратора" }, 403);
 
   if (p === "/api/videos") {
     // scope=main — всё, кроме «не выстрелов» профилей (облегчённый разбор: только поля для списка и фильтров);
