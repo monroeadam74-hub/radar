@@ -1958,9 +1958,12 @@ def run_wave(db):
     todo = [x for x in lst if "ig:" + x["h"].lower() not in have]
     # добор: аккаунты прошлых волн, которые сборщик не досканировал (обрыв актора по времени 23.11) — один раз
     redone = set(json.loads((db.q("SELECT v FROM kv WHERE k='wave_redone'") or [{"v": "[]"}])[0]["v"] or "[]"))
-    redo = [r for r in db.q("""SELECT id, handle, followers FROM profiles WHERE wave IS NOT NULL AND platform='Instagram'
-                               AND (COALESCE(deep,0)=0 OR COALESCE(reels,0) < ?)""", [int(S.get("wave_redo_min", 100))])
-            if r["id"] not in redone]
+    try:   # ручной список на добор (аккаунты, которые могли оборваться посередине)
+        force = set(json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", "redo_force.json"), encoding="utf-8")))
+    except Exception:
+        force = set()
+    redo = [r for r in db.q("""SELECT id, handle, followers, deep, reels FROM profiles WHERE wave IS NOT NULL AND platform='Instagram'""")
+            if r["id"] not in redone and (not r.get("deep") or (r.get("reels") or 0) < int(S.get("wave_redo_min", 100)) or r["id"] in force)]
     if redo and not ENV("RADAR_IGTEST"):
         log(f"Добор недособранных аккаунтов прошлых волн: {len(redo)}")
         size = max(0, size - len(redo)) if ENV("RADAR_WAVE") else size
