@@ -18,3 +18,8 @@ jobs:
           import json;d=json.load(open('o.json'));v=d.get('videos',[]);print('n',len(v),'counts',d.get('counts'),'note',d.get('note'),'err',d.get('error'))
           from collections import Counter;print(Counter(x.get('status') for x in v)); print([x.get('author') for x in v[:5]]); print('dir', Counter(x.get('direction') for x in v).most_common(30))" || head -c 400 o.json
           done
+          echo "== profiles"; curl -s -m 60 -b jar.txt -o p.json "$B/api/profiles"
+          python3 -c "
+          import json;P=json.load(open('p.json')).get('profiles',[])
+          print('PROFILES',len(P))
+          for p in sorted(P,key=lambda x:(x.get('wave') or '',x.get('reels') or 0)): print('PR',p.get('wave'),p.get('handle'),p.get('reels'),p.get('shots'),p.get('followers'))"
