@@ -168,8 +168,16 @@ async function api(req, env, url) {
     try {
       if (scope === "rest") {
         const like = "%" + q + "%";
-        const r = await env.DB.prepare(`SELECT ${cols} ${from} WHERE v.status='profile_rest' AND (?='' OR lower(v.author) LIKE ? OR lower(v.title) LIKE ?)
-            ORDER BY v.views DESC LIMIT 3000`).bind(q, like, like).all();
+        // фильтр направлений на сервере: иначе редкие темы (суставы) теряются за топ-3000 по просмотрам
+        const dirs = String(url.searchParams.get("dirs") || "").split(",").map((x) => x.trim()).filter((x) => /^[a-z_]+$/.test(x)).slice(0, 30);
+        const main = url.searchParams.get("main") === "1";
+        let dsql = "", binds = [q, like, like];
+        if (dirs.length) {
+          if (main) { dsql = ` AND v.direction IN (${dirs.map(() => "?").join(",")})`; binds.push(...dirs); }
+          else { dsql = " AND (" + dirs.map(() => "(',' || COALESCE(v.directions, v.direction, '') || ',') LIKE ?").join(" OR ") + ")"; binds.push(...dirs.map((d) => `%,${d},%`)); }
+        }
+        const r = await env.DB.prepare(`SELECT ${cols} ${from} WHERE v.status='profile_rest' AND (?='' OR lower(v.author) LIKE ? OR lower(v.title) LIKE ?)${dsql}
+            ORDER BY v.views DESC LIMIT 3000`).bind(...binds).all();
         rows = r.results || [];
       } else {
         const r = await env.DB.prepare(`SELECT ${cols} ${from} WHERE COALESCE(v.status,'') != 'profile_rest' ORDER BY v.views DESC LIMIT 30000`).all();

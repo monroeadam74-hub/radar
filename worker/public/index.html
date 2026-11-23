@@ -303,8 +303,8 @@ function buildSide(){
 function togIdx(kind,i){const set=F[kind],v=(kind==="cta"?window._ctas:window._types)[i];set.has(v)?set.delete(v):set.add(v);renderList();}
 function renderDirs(){
   const B=filtered({noDir:true}),cnt={};B.forEach(c=>dirsOf(c).forEach(d=>cnt[d]=(cnt[d]||0)+1));
-  $("dirBox").innerHTML=`<div class="chips" style="margin-bottom:6px">${[[false,"Все"],[true,"Только основное"]].map(([v,t])=>`<button class="chip ${F.dirMain===v?"on":""}" onclick="F.dirMain=${v};limit=150;renderList()" title="${v?"ролик попадает только в своё основное направление":"ролик попадает и в основное, и в дополнительные направления"}">${t}</button>`).join("")}</div>`+DIRS.filter(([k])=>k!=="none"||cnt.none).map(([k,t])=>`<label class="ck ${cnt[k]?"":"zero"}"><input type="checkbox" ${F.dirs.has(k)?"checked":""} onchange="togDir('${k}')"> ${t}<span class="n">${cnt[k]||0}</span></label>`).join("")
-    +(F.dirs.size?`<button class="chip" style="margin-top:6px" onclick="F.dirs.clear();limit=150;renderList()">Все направления</button>`:"");
+  $("dirBox").innerHTML=`<div class="chips" style="margin-bottom:6px">${[[false,"Все"],[true,"Только основное"]].map(([v,t])=>`<button class="chip ${F.dirMain===v?"on":""}" onclick="F.dirMain=${v};limit=150;renderList();restMaybe()" title="${v?"ролик попадает только в своё основное направление":"ролик попадает и в основное, и в дополнительные направления"}">${t}</button>`).join("")}</div>`+DIRS.filter(([k])=>k!=="none"||cnt.none).map(([k,t])=>`<label class="ck ${cnt[k]?"":"zero"}"><input type="checkbox" ${F.dirs.has(k)?"checked":""} onchange="togDir('${k}')"> ${t}<span class="n">${cnt[k]||0}</span></label>`).join("")
+    +(F.dirs.size?`<button class="chip" style="margin-top:6px" onclick="F.dirs.clear();limit=150;renderList();restMaybe()">Все направления</button>`:"");
 }
 function renderAxis(box,list,set,of,noKey,fn){
   const B=filtered({[noKey]:true}),cnt={};B.forEach(c=>of(c).forEach(d=>cnt[d]=(cnt[d]||0)+1));
@@ -323,12 +323,12 @@ function updSums(){sumSet("dirSum",F.dirs,DIRN);sumSet("hostSum",F.hosts,HOSTN);
 document.addEventListener("click",ev=>{document.querySelectorAll("details.dd[open]").forEach(d=>{if(!d.contains(ev.target))d.open=false;});});
 document.addEventListener("toggle",ev=>{const t=ev.target;if(t.matches&&t.matches("details.dd")&&t.open)document.querySelectorAll("details.dd[open]").forEach(d=>{if(d!==t)d.open=false;});},true);
 document.addEventListener("keydown",ev=>{if(ev.key==="Escape")document.querySelectorAll("details.dd[open]").forEach(d=>d.open=false);});
-function togDir(k){F.dirs.has(k)?F.dirs.delete(k):F.dirs.add(k);limit=150;renderList();}
+function togDir(k){F.dirs.has(k)?F.dirs.delete(k):F.dirs.add(k);limit=150;renderList();restMaybe();}
 function renderQueues(){
   const B=filtered({noQueue:true});
   const cnt={all:B.filter(x=>!x.hidden).length,none:B.filter(x=>!x.hidden&&!x.label).length,good:B.filter(x=>!x.hidden&&x.label==="good").length,bad:B.filter(x=>!x.hidden&&x.label==="bad").length,hidden:B.filter(x=>x.hidden).length};
   const S2=filtered({noStatus:true}), sc={}; S2.forEach(x=>sc[x.status]=(sc[x.status]||0)+1);
-  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_LOAD?"загружаю…":o.value==="profile_rest"&&(REST_Q===null||REST_Q==="")&&!$("q").value.trim()?(CNT.profile_rest||0):o.value?(sc[o.value]||0):S2.length);});
+  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_LOAD?"загружаю…":o.value==="profile_rest"&&(REST_Q===null||REST_Q==="|0"||REST_Q==="|1")&&!$("q").value.trim()?(CNT.profile_rest||0):o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
 function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,hosts:new Set(),vis:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
@@ -336,10 +336,11 @@ function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMai
 let _rt=null;
 function restMaybe(){clearTimeout(_rt);_rt=setTimeout(async()=>{
   const q=$("q").value.trim().toLowerCase().replace(/^@+/,""), need=$("fs").value==="profile_rest"||q.length>=3;
-  if(!need||REST_Q===q)return;
+  const dk=[...F.dirs].filter(d=>d!=="none").sort().join(","), key=q+"|"+dk+"|"+(F.dirMain?1:0);
+  if(!need||REST_Q===key)return;
   REST_LOAD=true;renderQueues();if($("fs").value==="profile_rest")renderList();
-  try{const r=await api("/api/videos?scope=rest&q="+encodeURIComponent(q));const have=new Set(V.map(x=>x.id));
-    V=V.filter(x=>x.status!=="profile_rest").concat((r.videos||[]).filter(x=>!have.has(x.id)||true).filter(x=>x.status==="profile_rest"));REST_Q=q;}catch{toast("Не удалось загрузить «не выстрелы» — попробуйте ещё раз");}REST_LOAD=false;renderList();
+  try{const r=await api("/api/videos?scope=rest&q="+encodeURIComponent(q)+(dk?"&dirs="+dk+"&main="+(F.dirMain?1:0):""));const have=new Set(V.map(x=>x.id));
+    V=V.filter(x=>x.status!=="profile_rest").concat((r.videos||[]).filter(x=>!have.has(x.id)||true).filter(x=>x.status==="profile_rest"));REST_Q=key;}catch{toast("Не удалось загрузить «не выстрелы» — попробуйте ещё раз");}REST_LOAD=false;renderList();
 },350);}
 $("so").onchange=()=>{F.dir=$("so").value==="author"?-1:1;limit=150;renderList();};
 $("q").oninput=()=>{limit=150;renderList();restMaybe();};
