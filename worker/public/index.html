@@ -31,6 +31,8 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .logo{font:700 20px 'Space Grotesk',sans-serif;letter-spacing:-.01em}.logo b{color:var(--acc)}
 .nav{display:flex;gap:2px;flex-wrap:wrap}
 .nav button{border:none;background:none;color:var(--m);padding:8px 14px;border-radius:999px}
+body.noadmin .adm{display:none!important}
+body.noadmin .aibtn{pointer-events:none}
 .nav button.on{background:var(--s2);color:#fff;font-weight:600}
 .search{flex:1 1 260px;display:flex}.search input{flex:1;border-radius:999px;height:38px;padding:0 16px}
 .view{display:none}.view.on{display:block}
@@ -146,8 +148,8 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <button class="on" data-v="videos">Ролики</button>
     <button data-v="summary">Сводка</button>
     <button data-v="authors">Профили</button>
-    <button data-v="settings">Настройки</button>
-    <button data-v="runs">Запуски</button>
+    <button data-v="settings" class="adm">Настройки</button>
+    <button data-v="runs" class="adm">Запуски</button>
     <button data-v="access" id="navAccess" style="display:none">Доступ</button>
   </nav>
   <label class="search"><span style="position:absolute;left:-9999px">Поиск</span><input id="q" placeholder="Поиск: автор, хук, подпись, ключ…"></label>
@@ -193,7 +195,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <section class="view" id="v_authors"><div class="pad">
   <div class="panel" style="max-width:none">
     <h3>Мои профили <span class="muted" style="font:400 13px Inter">обновляются автоматически раз в 3 дня</span></h3>
-    <div class="addp">
+    <div class="addp adm">
       <input id="padd" placeholder="Ссылка или ник: instagram.com/farmtruths · tiktok.com/@user · youtube.com/@channel" onkeydown="if(event.key==='Enter')addProfile()">
       <button class="btn pri" onclick="addProfile()">Добавить</button>
       <button class="btn" onclick="runNow('profiles')">Обновить сейчас</button>
@@ -249,7 +251,9 @@ async function api(path,body){const r=await fetch(path,body?{method:"POST",heade
 function showLogin(){$("app").style.display="none";$("loginBox").style.display="block";}
 async function login(){const r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({login:$("lg").value,password:$("pw").value})});if(r.ok){$("loginBox").style.display="none";start();}else $("loginErr").textContent="Неверный логин или пароль";}
 let ME={};
-async function loadMe(){try{ME=await api("/api/me");$("navAccess").style.display=ME.admin&&!ME.open?"":"none";}catch{}}
+async function loadMe(){try{ME=await api("/api/me");}catch{ME={admin:false};}
+  document.body.classList.toggle("noadmin",!ME.admin);$("navAccess").style.display=ME.admin&&!ME.open?"":"none";
+  if(!ME.admin&&["settings","runs","access"].includes(document.querySelector(".nav button.on")?.dataset.v))document.querySelector('.nav button[data-v="videos"]').click();}
 async function loadAccess(){
   let r; try{r=await api("/api/users");}catch(x){$("accbox").innerHTML=`<div class="panel">Нет доступа</div>`;return;}
   const fd=d=>d?new Date(d).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
@@ -421,7 +425,7 @@ function renderDet(autoplay){
        <div><div style="font:700 17px 'Space Grotesk',sans-serif">@${e(c.author)}${c.ai?'<span class="ai" title="Персонаж сгенерирован ИИ"> (ИИ)</span>':""}</div>
        <div class="muted" style="font-size:13px">${c.platform} · ${n(c.views)} просм. · ${n(c.followers)} подп. · ${e(c.published||"")}</div></div>
        <div style="display:flex;gap:8px;align-items:center">${c.nutra_score?`<span class="tag s${c.nutra_score}" style="font-size:14px">${c.nutra_score}/5</span>`:""}
-       <button class="star ${isTracked(c)?"on":""}" id="starB" onclick="follow()" title="Следить за автором · F">${isTracked(c)?"★ В профилях":"☆ Следить"}</button></div>
+       <button class="star adm ${isTracked(c)?"on":""}" id="starB" onclick="follow()" title="Следить за автором · F">${isTracked(c)?"★ В профилях":"☆ Следить"}</button></div>
      </div>
      <div class="acts">
        <button class="g ${c.label==="good"?"":"off"}" onclick="setLabel('good')">Нужно · 1</button>
@@ -604,7 +608,7 @@ function renderProfiles(){
    <td>${e(p.platform)}</td><td>${n(p.followers)}</td><td>${p.reels??"—"}</td><td>${n(p.median_views)}</td><td>${p.best_x?"×"+(+p.best_x).toFixed(1):"—"}</td>
    <td><b style="color:var(--acc)">${p.shots??"—"}</b></td><td>${p.per_week??"—"}</td>
    <td style="max-width:260px;font-size:12px">${p.funnel&&p.funnel.status==="ok"?`<b>${e(p.funnel.data.type||"")}</b><br><span class="muted">${e((p.funnel.data.offer||"").slice(0,90))}</span>`:p.ext_url?`<a href="${e(p.ext_url)}" target="_blank" rel="noopener" class="muted">${e(p.ext_url.replace(/^https?:\/\//,"").slice(0,32))}</a>`:"—"}</td><td>${p.new_last??"—"}</td><td>${ago(p.last_run)}</td><td class="muted">${e(p.status||"")}</td><td><button class="aibtn ${p.ai?"on":""}" title="Отметить, что персонаж сгенерирован ИИ" onclick="toggleAI(${i})">ИИ</button></td>
-   <td style="white-space:nowrap"><button class="btn" onclick="toProfile(${i})">Ролики</button> <button class="btn" id="del_${i}" onclick="delProfile(${i},this)">Удалить</button></td></tr>`).join("");
+   <td style="white-space:nowrap"><button class="btn" onclick="toProfile(${i})">Ролики</button> <button class="btn adm" id="del_${i}" onclick="delProfile(${i},this)">Удалить</button></td></tr>`).join("");
 }
 async function toggleAI(i){const p=P[i];p.ai=p.ai?0:1;await api("/api/profiles/ai",{id:p.id,ai:p.ai});
   V.forEach(c=>{if(c.author_id===p.id)c.ai=p.ai;});renderProfiles();toast(p.ai?"Помечен как ИИ":"Метка ИИ снята");}
@@ -620,7 +624,7 @@ async function delProfile(i,btn){
   await api("/api/profiles/delete",{id:p.id});toast("Профиль удалён из слежки");await loadProfiles();
 }
 function toProfile(i){const p=P[i];document.querySelector('.nav button[data-v="videos"]').click();F.src="profile";$("q").value=p.handle;$("fs").value="";F.queue="all";renderQueues();renderList();restMaybe();}
-async function follow(){
+async function follow(){if(!ME.admin)return;
   const c=cur();if(!c)return;const k=authorKey(c.platform,c.author_id,c.author);
   const ex=P.find(p=>p.id===k);
   if(ex){await api("/api/profiles/delete",{id:k});toast("Убран из профилей");}
@@ -633,7 +637,7 @@ function renderAuthors(){
   const q=$("aq").value.toLowerCase(),ap=$("ap").value,rel=$("arel").value==="1";
   const r=A.filter(a=>(!q||(a.handle||"").toLowerCase().includes(q))&&(!ap||a.platform===ap)&&(!rel||(a.relevant_shots||0)>0));
   $("atable").innerHTML=`<tr><th>Страница</th><th>Площадка</th><th>Подписчики</th><th>Выстрелов</th><th>По теме</th><th>Макс. просмотры</th><th>Лучший балл</th><th>Тип</th><th>Язык</th><th></th></tr>`+
-   r.map((a,i)=>`<tr><td><a href="${e(a.url)}" target="_blank" rel="noopener"><b>@${e(a.handle)}</b></a></td><td>${e(a.platform)}</td><td>${n(a.followers)}</td><td>${a.shots||0}</td><td><b style="color:var(--acc)">${a.relevant_shots||0}</b></td><td>${n(a.max_views)}</td><td>${a.best_score?`<span class="tag s${a.best_score}">${a.best_score}/5</span>`:"—"}</td><td>${e((a.main_type||"").replace(/_/g," "))}</td><td>${e(a.lang||"")}</td><td style="white-space:nowrap"><button class="btn" onclick="toAuthor(${i})">Ролики</button> ${P.some(p=>p.id===authorKey(a.platform,a.id,a.handle))?'<span style="color:var(--mid)">★</span>':`<button class="btn" onclick="followAuthor(${i})">☆ Следить</button>`}</td></tr>`).join("");
+   r.map((a,i)=>`<tr><td><a href="${e(a.url)}" target="_blank" rel="noopener"><b>@${e(a.handle)}</b></a></td><td>${e(a.platform)}</td><td>${n(a.followers)}</td><td>${a.shots||0}</td><td><b style="color:var(--acc)">${a.relevant_shots||0}</b></td><td>${n(a.max_views)}</td><td>${a.best_score?`<span class="tag s${a.best_score}">${a.best_score}/5</span>`:"—"}</td><td>${e((a.main_type||"").replace(/_/g," "))}</td><td>${e(a.lang||"")}</td><td style="white-space:nowrap"><button class="btn" onclick="toAuthor(${i})">Ролики</button> ${P.some(p=>p.id===authorKey(a.platform,a.id,a.handle))?'<span style="color:var(--mid)">★</span>':`<button class="btn adm" onclick="followAuthor(${i})">☆ Следить</button>`}</td></tr>`).join("");
   window._alist=r;
 }
 function toAuthor(i){const h=window._alist[i].handle;document.querySelector('.nav button[data-v="videos"]').click();showAuthor(h);}
@@ -672,7 +676,7 @@ async function runNow(mode){$("runmsg").textContent="Запускаю…";const 
 
 async function start(){
   try{const r=await api("/api/videos?scope=main");V=r.videos||[];CNT=r.counts||{};}catch(err){return;}
-  $("app").style.display="block"; buildSide(); renderList(); loadProfiles(); loadMe();
+  document.body.classList.add("noadmin"); $("app").style.display="block"; buildSide(); renderList(); loadProfiles(); loadMe();
   if(LIST[0])select(LIST[0].id,false);
 }
 start();
