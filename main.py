@@ -598,6 +598,50 @@ def analyze(c, video_bytes=None, model=None, client=None):
     return data
 
 
+def mp4_duration(b):
+    """Длительность mp4 в секундах из заголовка (атом mvhd), без сторонних библиотек."""
+    try:
+        i = b.find(b"mvhd")
+        if i < 0:
+            return None
+        ver = b[i + 4]
+        if ver == 1:
+            ts, du = int.from_bytes(b[i + 24:i + 28], "big"), int.from_bytes(b[i + 28:i + 36], "big")
+        else:
+            ts, du = int.from_bytes(b[i + 16:i + 20], "big"), int.from_bytes(b[i + 20:i + 24], "big")
+        return round(du / ts, 1) if ts else None
+    except Exception:
+        return None
+
+
+def subs_incomplete(subs, dur):
+    """Субтитры подозрительно неполные: речь обрывается задолго до конца или внутри большие дыры."""
+    if not subs or not dur or dur < 8:
+        return False
+    subs = sorted(subs, key=lambda x: x.get("start", 0))
+    covered = sum(max(0, (x.get("end") or 0) - (x.get("start") or 0)) for x in subs)
+    gaps = [subs[k + 1]["start"] - subs[k]["end"] for k in range(len(subs) - 1)]
+    big = sum(g for g in gaps if g > 2.5)
+    tail = dur - (subs[-1].get("end") or 0)
+    return tail > max(4, dur * 0.12) or big > max(4, dur * 0.12) or covered < dur * 0.5
+
+
+SUBS_ONLY = """Посмотри и прослушай видео ЦЕЛИКОМ, до последней секунды (длительность ≈ {dur} с).
+Выпиши ВСЮ речь без пропусков и сокращений: каждая фраза 1–4 сек, не длиннее ~12 слов, таймкоды по моменту речи, все end ≤ {dur}.
+"ru" — полный точный перевод каждой фразы на русский (не пересказ). Если в какие-то секунды речи нет (музыка) — их пропусти.
+Верни ТОЛЬКО JSON: {{"subtitles": [{{"start": сек, "end": сек, "orig": "фраза", "ru": "перевод"}}]}}"""
+
+
+def redo_subs(vb, dur, model, client, label):
+    """Повторный запрос только субтитров (проверка полноты). Возвращает список или None."""
+    from google.genai import types
+    part = types.Part.from_bytes(data=vb, mime_type="video/mp4")
+    d = ask_model([part, SUBS_ONLY.format(dur=dur)], label + " субтитры", model, client)
+    if isinstance(d, list):
+        d = next((x for x in d if isinstance(x, dict)), None)
+    return clean_subs(d.get("subtitles"), dur) if isinstance(d, dict) else None
+
+
 # ------------------------------------------------------------------ ЗАПИСЬ
 def upsert_video(db, c, status, pre=None, a=None):
     ts = NOW.isoformat(timespec="seconds")
@@ -2025,6 +2069,32 @@ def run_wave(db):
                     state[role]["n"] += 1
         if not res:
             return
+        # проверка полноты субтитров: смотрим те, что попадут в карточку (тексты 3.5, иначе 3.1)
+        if S.get("subs_check", 1):
+            role_s = "txt" if "txt" in res else ("cls" if "cls" in res else None)
+            dur_ = c.get("duration") or mp4_duration(vb)
+            if role_s and subs_incomplete(res[role_s].get("subtitles"), dur_):
+                use = role_s
+                if use == "txt":
+                    with lock:
+                        ok_ = time.time() >= state["txt"].get("next", 0) and not state["txt"]["off"]
+                        if ok_:
+                            state["txt"]["next"] = time.time() + float(S.get("wave_txt_gap", 6))
+                    if not ok_:
+                        use = "cls" if not state["cls"]["off"] else None
+                if use:
+                    try:
+                        new = redo_subs(vb, dur_, state[use]["model"], state[use]["client"], c["id"])
+                    except (QuotaDay, QuotaMinute):
+                        new = None
+                    old = res[role_s].get("subtitles") or []
+                    cov = lambda L: sum(max(0, x["end"] - x["start"]) for x in L or [])
+                    with lock:
+                        J["subs_retry"] = J.get("subs_retry", 0) + 1
+                    if new and (cov(new) > cov(old) * 1.15 or len(new) > len(old) + 1):
+                        res[role_s]["subtitles"] = new
+                        with lock:
+                            J["subs_fixed"] = J.get("subs_fixed", 0) + 1
         m = merge_an(base, cls=res.get("cls"), txt=res.get("txt"),
                      cls_m=state["cls"]["model"] if "cls" in res else None, txt_m=state["txt"]["model"] if "txt" in res else None)
         with lock:
