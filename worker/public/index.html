@@ -106,6 +106,8 @@ body.noadmin .aibtn{pointer-events:none}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}.kpis div{background:var(--s2,#151a21);border-radius:8px;padding:6px 8px}.kpis b{display:block;font-size:14px}.kpis span{font-size:11px;color:var(--m)}
 .tagl{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 8px}.tagl span{font-size:11px;background:#1c2430;color:#9fc3ff;border-radius:6px;padding:2px 6px}.tagl .mn{color:#ffd59a}
 .dyn{font-size:12px;margin:6px 0}.dyn .up{color:var(--acc);font-weight:600}.fun{font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0;display:grid;gap:3px}
+.heat.dm td{min-width:58px;height:40px;font-size:13px;text-align:center}
+.heat.dm th{font-size:11px;max-width:90px;white-space:normal}
 .heat{border-collapse:collapse;font-size:11px}.heat td,.heat th{width:26px;height:22px;text-align:center;border:1px solid #1a1f27}.heat th{color:var(--m);font-weight:500}
 dl{margin:0;display:grid;grid-template-columns:118px minmax(0,1fr);gap:8px 12px;font-size:13px}
 dt{color:var(--m)}dd{margin:0;color:var(--t)}
@@ -608,16 +610,28 @@ function renderSummary(){
   const T={}; S.forEach(c=>TAGS(c.title).tags.forEach(t=>{(T[t]=T[t]||{n:0,x:[]}).n++;T[t].x.push(xOf(c)||0);}));
   const top=Object.entries(T).sort((a,b)=>b[1].n-a[1].n).slice(0,30);
   const med=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:0;};
+  // направление × механизм: сколько выстрелов и медиана просмотров на каждую пару (только разобранные, у них есть механизм)
+  const AN=L.filter(c=>c.status==="analyzed"&&c.mechanism), MX={}, dset={}, mset={};
+  AN.forEach(c=>{const d=c.direction||"other", m=c.mechanism; dset[d]=(dset[d]||0)+1; mset[m]=(mset[m]||0)+1; const k=d+"|"+m; (MX[k]=MX[k]||[]).push(c.views||0);});
+  const dK=Object.keys(dset).sort((a,b)=>dset[b]-dset[a]).slice(0,16), mK=MECHS.map(x=>x[0]).filter(k=>mset[k]);
+  const mxN=Math.max(1,...Object.values(MX).map(a=>a.length));
+  const fmtV=v=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e3?Math.round(v/1e3)+"K":v;
+  const dm=AN.length?`<table class="heat dm"><tr><th>Направление \\ механизм</th>${mK.map(k=>`<th title="${e(MECHN[k])}">${e(MECHN[k])}</th>`).join("")}</tr>${dK.map(d=>`<tr><th style="text-align:left;white-space:nowrap">${e(DIRN[d]||d)} <span class="muted">${dset[d]}</span></th>${mK.map(m=>{const a=MX[d+"|"+m]||[];const md=a.length?med(a):0;
+      return `<td onclick="dmGo('${d}','${m}')" title="${e(DIRN[d]||d)} × ${e(MECHN[m])}: выстрелов ${a.length}, медиана просмотров ${n(md)}" style="cursor:${a.length?"pointer":"default"};background:${a.length?`rgba(212,255,58,${(0.08+0.6*a.length/mxN).toFixed(2)})`:"transparent"}">${a.length?`<b>${a.length}</b><br><span style="font-size:11px">${fmtV(md)}</span>`:""}</td>`}).join("")}</tr>`).join("")}</table>`
+    :`<div class="muted">Появится после разметки механизмов решения</div>`;
   const tech=S.map(c=>A_(c).tech).filter(Boolean);
   const share=(f)=>tech.length?Math.round(tech.filter(f).length/tech.length*100)+"%":"—";
   const nums=k=>tech.map(t=>parseFloat(t[k])).filter(x=>!isNaN(x));
   box.innerHTML=`<div class="panel"><h3>Сводка по текущим фильтрам</h3><div class="muted">Роликов ${L.length}, выстрелов и разобранных ${S.length}. Меняйте фильтры во вкладке «Ролики» — сводка пересчитается.</div></div>
+   <div class="panel"><h3>Направление × механизм решения</h3><div class="muted" style="font-size:12px;margin-bottom:8px">В клетке: сколько выстрелов (жирным) и медиана их просмотров. Чем ярче — тем больше выстрелов. Клик по клетке — открыть эти ролики. Учитываются разобранные выстрелы с механизмом и текущие фильтры.</div><div style="overflow:auto">${dm}</div></div>
    <div class="panel"><h3>Когда выходят выстрелы (время США, ET)</h3><div style="overflow:auto">${heat}</div><div class="muted" style="font-size:12px;margin-top:6px">Цифра — сколько выстрелов опубликовано в этот час. Наведите на клетку, чтобы увидеть, сколько всего роликов вышло в это время.</div></div>
    <div class="panel"><h3>Хештеги у выстрелов</h3>${top.length?`<table><tr><th>Хештег</th><th>Выстрелов</th><th>Медиана ×</th></tr>${top.map(([t,v])=>`<tr><td>${e(t)}</td><td>${v.n}</td><td>×${med(v.x).toFixed(1)}</td></tr>`).join("")}</table>`:`<div class="muted">Хештегов нет</div>`}</div>
    <div class="panel"><h3>Технический рецепт выстрелов</h3>${tech.length?`<div>Разобрано с монтажом: ${tech.length}. Медиана склеек: <b>${med(nums("cuts")).toFixed(0)}</b> · первое слово на <b>${med(nums("first_words_sec")).toFixed(1)}</b> с<br>
      ИИ-голос: <b>${share(t=>/ии/i.test(t.voice||""))}</b> · фоновая музыка: <b>${share(t=>/^есть/i.test(t.music||""))}</b> · субтитры на экране: <b>${share(t=>/^да/i.test(t.captions||""))}</b> · быстрый монтаж: <b>${share(t=>/быстр/i.test(t.pace||""))}</b></div>`
      :`<div class="muted">Появится после повторного разбора выстрелов с новыми полями монтажа</div>`}</div>`;
 }
+function dmGo(d,m){F.dirs=new Set([d]);F.dirMain=true;F.mechs=new Set([m]);F.mechMain=true;$("fs").value="analyzed";limit=150;
+  document.querySelector('.nav button[data-v="videos"]').click();renderList();}
 function renderProfiles(){
   const el=$("ptable");if(!el)return;
   if(!P.length){el.innerHTML=`<tr><td class="muted">Профилей пока нет — вставьте ссылку выше или нажмите ☆ Следить у любого ролика.</td></tr>`;return;}
