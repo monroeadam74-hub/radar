@@ -157,7 +157,7 @@ async function api(req, env, url) {
     const scope = url.searchParams.get("scope") || "main";
     const q = (url.searchParams.get("q") || "").trim().toLowerCase().replace(/^@+/, "");
     const slim = `json_object('hook_0_3s', json_extract(v.analysis,'$.hook_0_3s'), 'hook_type', json_extract(v.analysis,'$.hook_type'),
-        'cta', json_extract(v.analysis,'$.cta'), 'cta_mechanic', json_extract(v.analysis,'$.cta_mechanic'),
+        'cta', json_extract(v.analysis,'$.cta'), 'cta_mechanic', json_extract(v.analysis,'$.cta_mechanic'), 'ai_generated', json_extract(v.analysis,'$.ai_generated'),
         'tech', json_extract(v.analysis,'$.tech'))`;
     const cols = `v.id, v.platform, v.vertical, v.url, v.author, v.author_id, substr(v.title,1,600) AS title, v.published, v.duration, v.lang, v.keyword,
         v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score, v.content_type,

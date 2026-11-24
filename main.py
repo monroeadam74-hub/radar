@@ -360,6 +360,7 @@ ANALYSIS = """Ты — аналитик вирусного short-form конте
  "tech": {{"cuts": число склеек/смен плана за ролик, "face_share": "доля времени, когда в кадре лицо ведущего, %",
           "voice": "ИИ-голос / живой голос / без голоса", "music": "есть фоновая музыка / нет", "captions": "субтитры на экране: да/нет, где (верх/центр/низ)",
           "first_words_sec": секунда, когда звучит первое слово, "pace": "медленный / средний / быстрый монтаж"}},
+ "ai_generated": "да — ведущий/персонаж сгенерирован ИИ (аватар, синтетическое лицо или голос) / частично — ИИ-вставки, ИИ-анимация, ИИ-картинки / нет",
  "moderation_risk": "низкий/средний/высокий + почему. ЛЮБЫЕ обещания вылечить, снять или убрать боль, избежать операции или лекарств, обратить болезнь вспять, «за N дней», религиозные «исцелит» = ВЫСОКИЙ",
  "on_screen_text": [{{"t": секунда, "orig": "надпись", "ru": "перевод"}}],
  "subtitles": [{{"start": сек, "end": сек, "orig": "фраза", "ru": "перевод"}}]
@@ -2398,6 +2399,12 @@ def main():
                 log(f"QUOTA {mdl_}: ok {(r.text or '')[:20]}")
             except Exception as e:
                 log(f"QUOTA {mdl_}: {str(e)[:600]}")
+        return
+    if ENV("RADAR_MODE") == "aiflags":   # метка «ИИ-персонаж» профилям из таблицы (бесплатно)
+        hs = json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", "ai_handles.json"), encoding="utf-8"))
+        for h in hs:
+            db.q("UPDATE profiles SET ai=1 WHERE id=?", ["ig:" + h.lower()])
+        log("Метка ИИ:", len(hs), "ников;", db.q("SELECT COUNT(*) n FROM profiles WHERE ai=1")[0]["n"], "профилей помечено")
         return
     if ENV("RADAR_MODE") == "wave":
         stats = run_wave(db)
