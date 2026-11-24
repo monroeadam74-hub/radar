@@ -1142,6 +1142,25 @@ NAT_LABEL = """Для каждого Instagram-аккаунта по имени,
 {items}"""
 
 
+AI_PICK = """Это ники и имена Instagram-аккаунтов из блока «похожие» у ИИ-персонажей о здоровье (сгенерированные «врачи»,
+«мудрецы», «бабушки», «фермеры», «монахи», «холистики», «целители», «травники» — сеть аккаунтов, продающих добавки и гайды).
+Нужны именно такие аккаунты: персонаж-имя + здоровье/натуральные средства/мудрость предков. Язык: английский, испанский или португальский.
+НЕ нужны: реальные знаменитости и известные врачи с медийным именем; бренды-магазины; спорт; юмор; мода; Индия и хинди.
+Оцени по имени и нику: 3 — очень похоже на ИИ-персонажа о здоровье; 2 — вероятно; 1 — сомнительно; 0 — явно не то.
+Верни JSON-список: [{{"u": "ник", "s": 0-3}}]
+Аккаунты:
+{items}"""
+
+AI_LABEL = """Для каждого Instagram-аккаунта по имени, категории, описанию (био) и ссылке определи:
+"fit": true, если это аккаунт о здоровье/натуральных средствах; "ai": "да" / "вероятно" / "нет" — похоже ли на ИИ-персонажа
+(вымышленный «врач»/«бабушка»/«фермер»/«монах»/«целитель», шаблонное био «U.S. based holistic…», ссылки linktw.in / linktwin.co /
+geni.us / сайты-лендинги добавок или книг); "type": "ИИ-врач" / "ИИ-мудрец" / "ИИ-бабушка/дед" / "ИИ-холистик" / "Реальный эксперт" /
+"Паблик" / "Не в нише"; "spec": что продвигают, коротко по-русски; "lang": EN / ES / PT / другое; "excluded": true, если Индия/хинди.
+Верни JSON-список: [{{"u": "ник", "fit": true, "ai": "да", "type": "...", "spec": "...", "lang": "EN", "excluded": false}}]
+Аккаунты:
+{items}"""
+
+
 def lookalike():
     """Похожие на заданные аккаунты (RADAR_IGTEST — ники через запятую): похожие → отбор по имени → проверка профиля.
     Жёсткий потолок — RADAR_BUDGET."""
@@ -1151,6 +1170,15 @@ def lookalike():
     if budget <= 0 or not seeds:
         log("Нет бюджета или семян — ничего не запускаю"); return
     ac = apify(); spent = 0.0
+    kind_ai = ENV("RADAR_MODE") == "aisnow"
+    PICK, LABEL = (AI_PICK, AI_LABEL) if kind_ai else (NAT_PICK, NAT_LABEL)
+    paid = None
+    if ENV("GEMINI_KEY_PAID"):
+        from google import genai
+        paid = genai.Client(api_key=ENV("GEMINI_KEY_PAID"))
+
+    def _ask(txt, label):   # платная 3.1, если есть ключ (бесплатная могла упереться в суточный лимит)
+        return ask_model([txt], label, S.get("wave_cls_model", "gemini-3.1-flash-lite"), paid) if paid else ask([txt], label)
 
     def cost(run, est):
         try:
@@ -1176,7 +1204,7 @@ def lookalike():
     score = {}
     cands = list(votes)
     for i in range(0, len(cands), 150):
-        data = ask([NAT_PICK.format(items="\n".join(f"{u} | {names[u]}" for u in cands[i:i + 150]))], "отбор")
+        data = _ask(PICK.format(items="\n".join(f"{u} | {names[u]}" for u in cands[i:i + 150])), "отбор")
         if isinstance(data, dict):
             data = next((v for v in data.values() if isinstance(v, list)), [])
         for d in data or []:
@@ -1198,8 +1226,8 @@ def lookalike():
     lab = {}
     for i in range(0, len(profs), 40):
         txt = "\n".join(f'{p.get("username")} | {p.get("fullName") or ""} | {p.get("businessCategoryName") or ""} | '
-                        f'{(p.get("biography") or "").replace(chr(10), " ")[:220]}' for p in profs[i:i + 40])
-        data = ask([NAT_LABEL.format(items=txt)], "разметка")
+                        f'{(p.get("biography") or "").replace(chr(10), " ")[:220]} | {p.get("externalUrl") or ""}' for p in profs[i:i + 40])
+        data = _ask(LABEL.format(items=txt), "разметка")
         if isinstance(data, dict):
             data = next((v for v in data.values() if isinstance(v, list)), [])
         for d in data or []:
@@ -1212,7 +1240,7 @@ def lookalike():
         print(json.dumps({"u": p.get("username"), "name": p.get("fullName"), "fol": p.get("followersCount"), "ver": p.get("verified"),
                           "cat": p.get("businessCategoryName"), "url": p.get("externalUrl"),
                           "bio": (p.get("biography") or "").replace("\n", " · ")[:220], "votes": votes.get(u, 0), "seed": u in seeds,
-                          **{k: l.get(k) for k in ("fit", "type", "spec", "lang", "country", "excluded")}}, ensure_ascii=True))
+                          **{k: l.get(k) for k in ("fit", "ai", "type", "spec", "lang", "country", "excluded")}}, ensure_ascii=True))
     print("SNOWJSON_END")
 
 
@@ -2471,7 +2499,7 @@ def main():
     if ENV("RADAR_MODE") == "natsnow":
         nat_snow()
         return
-    if ENV("RADAR_MODE") == "lookalike":
+    if ENV("RADAR_MODE") in ("lookalike", "aisnow"):
         lookalike()
         return
     if ENV("RADAR_MODE") == "medsnow":
