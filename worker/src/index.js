@@ -177,8 +177,10 @@ async function api(req, env, url) {
           else { dsql = " AND (" + dirs.map(() => "(',' || COALESCE(v.directions, v.direction, '') || ',') LIKE ?").join(" OR ") + ")"; binds.push(...dirs.map((d) => `%,${d},%`)); }
         }
         const r = await env.DB.prepare(`SELECT ${cols} ${from} WHERE v.status='profile_rest' AND (?='' OR lower(v.author) LIKE ? OR lower(v.title) LIKE ?)${dsql}
-            ORDER BY v.views DESC LIMIT 3000`).bind(...binds).all();
+            ORDER BY v.views DESC LIMIT 3000 OFFSET ?`).bind(...binds, Math.max(0, parseInt(url.searchParams.get("offset") || "0") || 0)).all();
+        const tot = await env.DB.prepare(`SELECT COUNT(*) AS n FROM videos v WHERE v.status='profile_rest' AND (?='' OR lower(v.author) LIKE ? OR lower(v.title) LIKE ?)${dsql}`).bind(...binds).first();
         rows = r.results || [];
+        counts.rest_total = tot ? tot.n : rows.length;
       } else {
         const r = await env.DB.prepare(`SELECT ${cols} ${from} WHERE COALESCE(v.status,'') != 'profile_rest' ORDER BY v.views DESC LIMIT 30000`).all();
         rows = r.results || [];

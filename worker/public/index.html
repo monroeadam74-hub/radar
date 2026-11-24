@@ -195,7 +195,8 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
     <div class="lh"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><div class="src" id="srcBox"></div><div id="cnt" class="muted"></div></div><div class="muted" id="lstat"></div></div>
     <div class="grid-h" id="gridH"></div>
     <div id="rows"></div>
-    <div class="more"><button class="btn" id="moreBtn" onclick="limit+=150;renderList()">Показать ещё</button></div>
+    <div class="more"><button class="btn" id="moreBtn" onclick="limit+=150;renderList()">Показать ещё</button>
+      <button class="btn" id="restMore" style="display:none" onclick="restMaybe(true)"></button></div>
   </main>
 
   <section class="det" id="det" aria-label="Ролик"><div class="empty">Выберите ролик в списке</div></section>
@@ -347,19 +348,24 @@ function renderQueues(){
   const B=filtered({noQueue:true});
   const cnt={all:B.filter(x=>!x.hidden).length,none:B.filter(x=>!x.hidden&&!x.label).length,good:B.filter(x=>!x.hidden&&x.label==="good").length,bad:B.filter(x=>!x.hidden&&x.label==="bad").length,hidden:B.filter(x=>x.hidden).length};
   const S2=filtered({noStatus:true}), sc={}; S2.forEach(x=>sc[x.status]=(sc[x.status]||0)+1);
-  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_LOAD?"загружаю…":o.value==="profile_rest"&&(REST_Q===null||REST_Q==="|0"||REST_Q==="|1")&&!$("q").value.trim()?(CNT.profile_rest||0):o.value?(sc[o.value]||0):S2.length);});
+  [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_LOAD?"загружаю…":o.value==="profile_rest"?(REST_TOTAL??CNT.profile_rest??0).toLocaleString("ru-RU"):o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
 function resetF(){$("fai").value="";F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,hosts:new Set(),vis:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
 ["fv","fs","fai","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();restMaybe();});
 let _rt=null;
-function restMaybe(){clearTimeout(_rt);_rt=setTimeout(async()=>{
+let REST_TOTAL=null, REST_N=0;
+function restMaybe(more){clearTimeout(_rt);_rt=setTimeout(async()=>{
   const q=$("q").value.trim().toLowerCase().replace(/^@+/,""), need=$("fs").value==="profile_rest"||q.length>=3;
   const dk=[...F.dirs].filter(d=>d!=="none").sort().join(","), key=q+"|"+dk+"|"+(F.dirMain?1:0);
-  if(!need||REST_Q===key)return;
+  if(!need||(REST_Q===key&&!more))return;
   REST_LOAD=true;renderQueues();if($("fs").value==="profile_rest")renderList();
-  try{const r=await api("/api/videos?scope=rest&q="+encodeURIComponent(q)+(dk?"&dirs="+dk+"&main="+(F.dirMain?1:0):""));const have=new Set(V.map(x=>x.id));
-    V=V.filter(x=>x.status!=="profile_rest").concat((r.videos||[]).filter(x=>!have.has(x.id)||true).filter(x=>x.status==="profile_rest"));REST_Q=key;}catch{toast("Не удалось загрузить «не выстрелы» — попробуйте ещё раз");}REST_LOAD=false;renderList();
+  const off=more&&REST_Q===key?REST_N:0;
+  try{const r=await api("/api/videos?scope=rest&q="+encodeURIComponent(q)+(dk?"&dirs="+dk+"&main="+(F.dirMain?1:0):"")+(off?"&offset="+off:""));
+    const got=(r.videos||[]).filter(x=>x.status==="profile_rest");
+    if(off){const have=new Set(V.map(x=>x.id));V=V.concat(got.filter(x=>!have.has(x.id)));REST_N+=got.length;}
+    else{V=V.filter(x=>x.status!=="profile_rest").concat(got);REST_N=got.length;}
+    REST_TOTAL=(r.counts||{}).rest_total??null;REST_Q=key;}catch{toast("Не удалось загрузить «не выстрелы» — попробуйте ещё раз");}REST_LOAD=false;renderList();
 },350);}
 $("so").onchange=()=>{F.dir=$("so").value==="author"?-1:1;limit=150;renderList();};
 $("q").oninput=()=>{limit=150;renderList();restMaybe();};
@@ -415,6 +421,8 @@ function renderList(){
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${REST_LOAD&&$("fs").value==="profile_rest"?"Загружаю «не выстрелы» профилей…":V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
   $("moreBtn").style.display=LIST.length>shown.length?"inline-block":"none";
+  const rm=$("restMore"), restOn=$("fs").value==="profile_rest"&&REST_TOTAL!=null&&REST_N<REST_TOTAL&&LIST.length<=shown.length;
+  rm.style.display=restOn?"inline-block":"none"; if(restOn)rm.textContent=`Загрузить ещё «не выстрелы»: ${REST_N.toLocaleString("ru-RU")} из ${REST_TOTAL.toLocaleString("ru-RU")}`;
 }
 function row(c){
   const a=A_(c),s=c.nutra_score;
