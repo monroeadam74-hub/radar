@@ -161,25 +161,25 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
  <div class="wrap">
   <aside class="side">
     <div><h4>Очередь</h4><div id="queues"></div></div>
-    <div><h4>Вертикаль</h4><select id="fv" style="width:100%"></select></div>
+    <div><h4>Статус</h4><select id="fs" style="width:100%">
+      <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
+      <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option><option value="profile_rest">Профили: не выстрел</option></select></div>
+    <div><h4>Направление</h4><details class="dd"><summary id="dirSum"><span>Все</span></summary><div class="ddp" id="dirBox"></div></details></div>
     <div><h4>Площадка</h4>
       <label class="ck"><input type="checkbox" id="pYT" checked> YouTube Shorts</label>
       <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label>
       <label class="ck"><input type="checkbox" id="pIG" checked> Instagram</label></div>
-    <div><h4>Направление</h4><details class="dd"><summary id="dirSum"><span>Все</span></summary><div class="ddp" id="dirBox"></div></details></div>
     <div><h4>ИИ-контент</h4><select id="fai" style="width:100%" title="ИИ-профиль — автор помечен как ИИ-персонаж; ИИ в ролике — так решил разбор (новые разборы с 24.11)">
       <option value="">Все</option><option value="ai">Только ИИ (профиль или ролик)</option><option value="aiprof">Только ИИ-профили</option><option value="aivid">ИИ в ролике (по разбору)</option><option value="noai">Без ИИ</option></select></div>
     <div><h4>Ведущий</h4><details class="dd"><summary id="hostSum"><span>Все</span></summary><div class="ddp" id="hostBox"></div></details></div>
     <div><h4>Визуальный приём</h4><details class="dd"><summary id="visSum"><span>Все</span></summary><div class="ddp" id="visBox"></div></details></div>
-    <div><h4>Статус</h4><select id="fs" style="width:100%">
-      <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
-      <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option><option value="profile_rest">Профили: не выстрел</option></select></div>
     <div><h4>Балл под нутру</h4><div class="chips" id="scoreChips"></div></div>
     <div><h4>Механика CTA</h4><details class="dd"><summary id="ctaSum"><span>Все</span></summary><div class="ddp" id="ctaBox"></div></details></div>
     <div><h4>Тип контента</h4><details class="dd"><summary id="typeSum"><span>Все</span></summary><div class="ddp" id="typeBox"></div></details></div>
     <div><h4>Сортировка</h4><select id="so" style="width:100%">
       <option value="score">Балл, потом просмотры</option><option value="views">Просмотры</option><option value="outlier">× (выстрел)</option><option value="pub">Дата публикации</option><option value="new">Дата добавления</option><option value="author">Автор (А–Я)</option><option value="er">Вовлечённость (ER)</option><option value="share">Репосты ÷ просмотры</option><option value="cmr">Комментарии ÷ просмотры</option></select>
     <div class="chips" style="margin-top:6px"><button class="chip" id="dirB" onclick="F.dir*=-1;limit=150;renderList()">↓ по убыванию</button></div></div>
+    <div><h4>Вертикаль</h4><select id="fv" style="width:100%"></select></div>
     <button class="btn" onclick="resetF()">Сбросить фильтры</button>
   </aside>
 
@@ -333,7 +333,7 @@ function renderQueues(){
   [...$("fs").options].forEach(o=>{o.dataset.t=o.dataset.t||o.textContent;o.textContent=o.dataset.t+" · "+(o.value==="profile_rest"&&REST_LOAD?"загружаю…":o.value==="profile_rest"&&(REST_Q===null||REST_Q==="|0"||REST_Q==="|1")&&!$("q").value.trim()?(CNT.profile_rest||0):o.value?(sc[o.value]||0):S2.length);});
   $("queues").innerHTML=QUEUES.map(([k,t])=>`<button class="q ${F.queue===k?"on":""}" onclick="F.queue='${k}';renderQueues();renderList()"><span>${t}</span><span>${cnt[k]}</span></button>`).join("");
 }
-function resetF(){F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,hosts:new Set(),vis:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
+function resetF(){$("fai").value="";F={score:0,cta:new Set(),types:new Set(),dirs:new Set(),dirMain:false,hosts:new Set(),vis:new Set(),queue:"all",src:F.src};$("fv").value="";$("fs").value="analyzed";$("pYT").checked=$("pTT").checked=$("pIG").checked=true;$("q").value="";$("so").value="score";buildSide();renderList();}
 ["fv","fs","fai","pYT","pTT","pIG"].forEach(i=>$(i).onchange=()=>{limit=150;renderList();restMaybe();});
 let _rt=null;
 function restMaybe(){clearTimeout(_rt);_rt=setTimeout(async()=>{
