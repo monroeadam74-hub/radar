@@ -27,5 +27,5 @@ jobs:
           python3 -c "
           import json;P=json.load(open('p.json')).get('profiles',[])
           print('PROFILES',len(P))
-          for p in sorted(P,key=lambda x:(x.get('wave') or '',x.get('reels') or 0)): print("PR",p.get("wave"),p.get('handle'),p.get('reels'),p.get('shots'),p.get('followers'))"
+          for p in sorted(P,key=lambda x:(x.get('wave') or '',x.get('reels') or 0)): print('PR',p.get('wave'),p.get('handle'),p.get('reels'),p.get('shots'),p.get('followers'))"
           if [ -n "${{ inputs.vid }}" ]; then curl -s -m 60 -b jar.txt "$B/api/video?id=${{ inputs.vid }}" > v.json; echo "VIDJSON_BEGIN"; python3 -c "import json;print(json.dumps(json.load(open('v.json')),ensure_ascii=True))"; echo "VIDJSON_END"; fi
