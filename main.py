@@ -1891,6 +1891,103 @@ def run_profiles(db, only=None, analyze_now=True, deep_n=None):
     return dict(found=found, new=len(new_ids), analyzed=analyzed, new_ids=new_ids)
 
 
+# ------------------------------------------------------------------ МЕХАНИЗМ РЕШЕНИЯ (проблема → чем решают)
+MECHS = [("supplement", "БАД / добавка"), ("food", "Продукт / рецепт"), ("drink", "Напиток / настой"),
+         ("exercise", "Упражнение / растяжка"), ("topical", "Мазь / наружное"), ("selfmassage", "Самомассаж / техника"),
+         ("habit", "Привычка / образ жизни"), ("drug", "Аптечное лекарство"), ("clinic", "Процедура / клиника"),
+         ("device", "Устройство / товар"), ("visit", "Запись к специалисту"), ("none", "Без решения"), ("other", "Другое")]
+MECH_KEYS = {k for k, _ in MECHS}
+MECH_VERSION = 1
+MECHCLASS = """По разбору ролика о здоровье определи МЕХАНИЗМ РЕШЕНИЯ — чем ролик предлагает решить проблему.
+Справочник (только ключи слева):
+{mechs}
+Правила: visit — решение через визит/консультацию/клинику/онлайн-приём («запишись ко мне», «приходи», «ссылка на приём»);
+none — названа проблема или разоблачён миф, но НЕ сказано, что делать, и никуда не зовут; clinic — конкретная медицинская процедура
+(уколы, операция, физиотерапия), а не просто «приходи»; food — еда/рецепт; drink — напиток/настой/вода/чай; supplement — капсулы,
+порошки, витамины, добавки. Если ни один ключ не подходит — "other".
+Для каждого ролика: "mech" — основной ключ, "extra" — 0–2 дополнительных (только если реально есть в ролике),
+"what" — что конкретно предлагают, 2–7 слов по-русски («коллаген по утрам», «3 упражнения на колени», «приём у ортопеда»).
+Ролики:
+{items}
+Верни ТОЛЬКО JSON-список: [{{"id": "...", "mech": "ключ", "extra": [], "what": "..."}}]"""
+
+
+def norm_mech(main, extra=None):
+    m = str(main or "").strip().lower()
+    m = m if m in MECH_KEYS else None
+    ex = [str(x).strip().lower() for x in (extra or []) if isinstance(x, str)]
+    ex = [x for x in ex if x in MECH_KEYS and x not in (m, "other", "none")][:2]
+    if not m and ex:
+        m, ex = ex[0], ex[1:]
+    return m, ",".join([m] + ex) if m else None
+
+
+def classify_mechanisms(db, limit=3000, model=None, client=None, threads=8, keys=None):
+    """Механизм решения для разобранных выстрелов — по тексту разбора и субтитрам, без загрузки видео.
+    keys — переразметить только ролики с этими механизмами (например, ['other'] после пополнения справочника)."""
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    if keys:
+        q = "SELECT id, title, analysis, subtitles FROM videos WHERE status='analyzed' AND mechanism IN (%s) LIMIT ?" % ",".join(lit(k) for k in keys)
+    else:
+        q = "SELECT id, title, analysis, subtitles FROM videos WHERE status='analyzed' AND mechanism IS NULL LIMIT ?"
+    rows = db.q(q, [limit])
+    log(f"Механизм: к разметке {len(rows)} роликов")
+    mechs = "\n".join(f"{k} — {t}" for k, t in MECHS)
+    done, lk = [0], threading.Lock()
+
+    def batch(chunk):
+        items = []
+        for r in chunk:
+            a = json.loads(r["analysis"] or "{}")
+            try:
+                subs = json.loads(r["subtitles"] or "[]") if isinstance(r["subtitles"], str) else (r["subtitles"] or [])
+            except Exception:
+                subs = []
+            speech = " ".join(str(x.get("ru") or x.get("orig") or "") for x in subs if isinstance(x, dict))[:700]
+            txt = " | ".join(f"{k}: {v}" for k, v in [("хук", a.get("hook_0_3s")), ("CTA", a.get("cta")),
+                             ("как адаптировать", str(a.get("how_to_adapt") or "")[:200]), ("речь", speech),
+                             ("подпись", (r.get("title") or "")[:200])] if v and v != "нет")
+            items.append(f'{r["id"]}: {txt!r}')
+        try:
+            data = ask_model([MECHCLASS.format(mechs=mechs, items="\n".join(items))], "механизм", model, client) if model \
+                else ask([MECHCLASS.format(mechs=mechs, items="\n".join(items))], "механизм")
+        except QuotaDay as e:
+            log("  механизм: стоп —", str(e)[:150]); return
+        except QuotaMinute:
+            return
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        cids = {r["id"] for r in chunk}
+        upd = []
+        for d in data or []:
+            if isinstance(d, dict) and d.get("id") in cids:
+                m, ms = norm_mech(d.get("mech"), d.get("extra"))
+                if m:
+                    upd.append((d["id"], m, ms, str(d.get("what") or "")[:80]))
+        if upd:
+            ids = ",".join(lit(u[0]) for u in upd)
+            case = lambda j: " ".join(f"WHEN {lit(u[0])} THEN {lit(u[j])}" for u in upd)
+            db.q(f"UPDATE videos SET mech_v = {MECH_VERSION}, mechanism = CASE id {case(1)} END, mechanisms = CASE id {case(2)} END, "
+                 f"mech_note = CASE id {case(3)} END WHERE id IN ({ids})")
+            with lk:
+                done[0] += len(upd)
+
+    chunks = [rows[i:i + 20] for i in range(0, len(rows), 20)]
+    with ThreadPoolExecutor(1 if ENV("LOCAL_DB") else threads) as ex:
+        list(ex.map(batch, chunks))
+    log(f"Механизм: размечено {done[0]}/{len(rows)}")
+    return done[0]
+
+
+def mech_report(db):
+    """Что попало в «Другое»: частые формулировки — кандидаты в новые механизмы (для утверждения владельцем)."""
+    rows = db.q("SELECT mechanism m, COUNT(*) n FROM videos WHERE status='analyzed' AND mechanism IS NOT NULL GROUP BY mechanism ORDER BY n DESC")
+    log("МЕХАНИЗМЫ: " + ", ".join(f"{r['m']}={r['n']}" for r in rows))
+    oth = db.q("SELECT mech_note w, views v FROM videos WHERE status='analyzed' AND mechanism='other' ORDER BY views DESC LIMIT 1500")
+    print("MECHJSON_BEGIN"); print(json.dumps({"counts": rows, "other": oth}, ensure_ascii=True)); print("MECHJSON_END")
+
+
 # ------------------------------------------------------------------ ВОЛНЫ (массовый сбор топ-аккаунтов)
 CLS_KEYS = ("direction", "direction_extra", "host", "visuals", "moderation_risk")   # берём у модели-классификатора
 
@@ -2168,6 +2265,10 @@ def run_wave(db):
                     break
         except Exception as e:
             log("Направления: ошибка", str(e)[:200])
+        try:
+            J["mech_labeled"] = classify_mechanisms(db, limit=6000, model=m_cls, client=state["cls"]["client"], threads=8)
+        except Exception as e:
+            log("Механизм: ошибка", str(e)[:200])
     db.q("INSERT OR REPLACE INTO kv VALUES ('wave_tries', ?)", [json.dumps(tries)])
     if paid_used is not None:
         db.q("INSERT OR REPLACE INTO kv VALUES ('paid_cls_n', ?)", [str(paid_used + state["cls"]["n"])])
@@ -2296,7 +2397,9 @@ def main():
                   "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN visual TEXT",
                   "ALTER TABLE videos ADD COLUMN visuals TEXT", "ALTER TABLE videos ADD COLUMN vis_v INTEGER",
                   "ALTER TABLE profiles ADD COLUMN bio TEXT", "ALTER TABLE profiles ADD COLUMN ext_url TEXT",
-                  "ALTER TABLE profiles ADD COLUMN wave TEXT"):
+                  "ALTER TABLE profiles ADD COLUMN wave TEXT", "ALTER TABLE videos ADD COLUMN mechanism TEXT",
+                  "ALTER TABLE videos ADD COLUMN mechanisms TEXT", "ALTER TABLE videos ADD COLUMN mech_note TEXT",
+                  "ALTER TABLE videos ADD COLUMN mech_v INTEGER"):
         try:
             db.q(alter)
         except Exception:
@@ -2399,6 +2502,18 @@ def main():
                 log(f"QUOTA {mdl_}: ok {(r.text or '')[:20]}")
             except Exception as e:
                 log(f"QUOTA {mdl_}: {str(e)[:600]}")
+        return
+    if ENV("RADAR_MODE") in ("mechanisms", "mechreport"):   # механизм решения: разметка (платная 3.1) и отчёт по «Другому»
+        if ENV("RADAR_MODE") == "mechanisms":
+            from google import genai
+            cl = genai.Client(api_key=ENV("GEMINI_KEY_PAID")) if ENV("GEMINI_KEY_PAID") else None
+            keys = [k for k in (ENV("RADAR_IGTEST") or "").split(",") if k] or None
+            for _ in range(6):
+                n_ = classify_mechanisms(db, limit=3000, model=S.get("wave_cls_model", "gemini-3.1-flash-lite") if cl else None,
+                                         client=cl, threads=8, keys=keys)
+                if n_ < 50 or keys:
+                    break
+        mech_report(db)
         return
     if ENV("RADAR_MODE") == "aiflags":   # метка «ИИ-персонаж» профилям из таблицы (бесплатно)
         hs = json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", "ai_handles.json"), encoding="utf-8"))

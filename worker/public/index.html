@@ -165,6 +165,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
       <option value="analyzed">Разобранные</option><option value="">Все</option><option value="queued">Ждут разбора</option>
       <option value="prefilter">Ждут фильтра</option><option value="skip_topic">Отсеяны: не по теме</option><option value="skip_lang">Отсеяны: другой язык</option><option value="profile_rest">Профили: не выстрел</option></select></div>
     <div><h4>Направление</h4><details class="dd"><summary id="dirSum"><span>Все</span></summary><div class="ddp" id="dirBox"></div></details></div>
+    <div><h4>Механизм решения</h4><details class="dd"><summary id="mechSum"><span>Все</span></summary><div class="ddp" id="mechBox"></div></details></div>
     <div><h4>Площадка</h4>
       <label class="ck"><input type="checkbox" id="pYT" checked> YouTube Shorts</label>
       <label class="ck"><input type="checkbox" id="pTT" checked> TikTok</label>
@@ -234,10 +235,12 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--bg);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
-let CNT={}, REST_Q=null, REST_LOAD=false, V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, hosts:new Set(), vis:new Set(), queue:"all", src:"all", dir:1};
+let CNT={}, REST_Q=null, REST_LOAD=false, V=[], A=[], P=[], SET=null, limit=150, selId=null, F={score:0, cta:new Set(), types:new Set(), dirs:new Set(), dirMain:false, mechs:new Set(), mechMain:false, hosts:new Set(), vis:new Set(), queue:"all", src:"all", dir:1};
 const HOSTS=[["doctor","Врач / эксперт"],["sage","Мудрец-архетип"],["elder","Бабушка / дед / фермер"],["person","Обычный человек / UGC"],["none","Без ведущего"],["unk","Не размечено"]];
 const VISS=[["talking","Говорящая голова"],["pointer","«Указка на тело»"],["shock","Шок-крупный план"],["anatomy","3D-анатомия"],["beforeafter","До / после на экране"],["prop","Предмет в руке + вопрос"],["experiment","Наглядный опыт"],["recipe","Рецепт / приготовление"],["exercise","Упражнение"],["clinic","Клиника / процедура"],["rating","Рейтинг / обзор"],["product","Товар / распаковка / ASMR"],["humor","Юмор / скетч / POV"],["slides","Слайды / текст на фоне"],["unk","Не размечено"]];
 const HOSTN=Object.fromEntries(HOSTS),VISN=Object.fromEntries(VISS);
+const MECHS=[["supplement","БАД / добавка"],["food","Продукт / рецепт"],["drink","Напиток / настой"],["exercise","Упражнение / растяжка"],["topical","Мазь / наружное"],["selfmassage","Самомассаж / техника"],["habit","Привычка / образ жизни"],["drug","Аптечное лекарство"],["clinic","Процедура / клиника"],["device","Устройство / товар"],["visit","Запись к специалисту"],["none","Без решения"],["other","Другое"],["unk","Не размечено"]],MECHN=Object.fromEntries(MECHS);
+const mechOf=c=>F.mechMain?[c.mechanism||"unk"]:(c.mechanisms?c.mechanisms.split(","):[c.mechanism||"unk"]);
 const hostOf=c=>[c.host||"unk"],visOf=c=>c.visuals?c.visuals.split(","):["unk"];
 const DIRS=[["knees","Колени и суставы"],["back","Спина и шея"],["potency","Потенция и либидо"],["testosterone","Тестостерон и выносливость"],["prostate","Простата"],["sugar","Сахар в крови"],["weight","Похудение и метаболизм"],["heart","Давление и сердце"],["brain","Память и мозг"],["vision","Зрение"],["hearing","Слух и шум в ушах"],["gut","ЖКТ и кишечник"],["liver","Печень и детокс"],["sleep","Сон и стресс"],["women","Женское здоровье"],["veins","Вены и ноги"],["skin","Кожа и антиэйдж"],["hair","Волосы и ногти"],["energy","Энергия и усталость"],["immunity","Иммунитет и воспаление"],["kidney","Почки и мочевой пузырь"],["general","Общее / долголетие"],["other","Не про здоровье"],["none","Не размечено"]];
 const DIRN=Object.fromEntries(DIRS);
@@ -313,6 +316,13 @@ function renderAxis(box,list,set,of,noKey,fn){
   $(box).innerHTML=list.filter(([k])=>k!=="unk"||cnt.unk).map(([k,t])=>`<label class="ck ${cnt[k]?"":"zero"}"><input type="checkbox" ${set.has(k)?"checked":""} onchange="${fn}('${k}')"> ${t}<span class="n">${cnt[k]||0}</span></label>`).join("")
     +(set.size?`<button class="chip" style="margin-top:6px" onclick="F.${fn==="togHost"?"hosts":"vis"}.clear();limit=150;renderList()">Сбросить</button>`:"");
 }
+function renderMech(){
+  const B=filtered({noMech:true}),cnt={};B.forEach(c=>mechOf(c).forEach(d=>cnt[d]=(cnt[d]||0)+1));
+  $("mechBox").innerHTML=`<div class="chips" style="margin-bottom:6px">${[[false,"Все"],[true,"Только основной"]].map(([v,t])=>`<button class="chip ${F.mechMain===v?"on":""}" onclick="F.mechMain=${v};limit=150;renderList()">${t}</button>`).join("")}</div>`
+   +MECHS.filter(([k])=>k!=="unk"||cnt.unk).map(([k,t])=>`<label class="ck ${cnt[k]?"":"zero"}"><input type="checkbox" ${F.mechs.has(k)?"checked":""} onchange="togMech('${k}')"> ${t}<span class="n">${cnt[k]||0}</span></label>`).join("")
+   +(F.mechs.size?`<button class="chip" style="margin-top:6px" onclick="F.mechs.clear();limit=150;renderList()">Сбросить</button>`:"");
+}
+function togMech(k){F.mechs.has(k)?F.mechs.delete(k):F.mechs.add(k);limit=150;renderList();}
 function togHost(k){F.hosts.has(k)?F.hosts.delete(k):F.hosts.add(k);limit=150;renderList();}
 function togVis(k){F.vis.has(k)?F.vis.delete(k):F.vis.add(k);limit=150;renderList();}
 function sumSet(id,set,names){
@@ -320,7 +330,7 @@ function sumSet(id,set,names){
   s.classList.toggle("act",v.length>0);
   s.innerHTML=`<span title="${e(v.join(", "))}">${v.length?e(v.length>2?v.slice(0,2).join(", ")+" +"+(v.length-2):v.join(", ")):"Все"}</span>`;
 }
-function updSums(){sumSet("dirSum",F.dirs,DIRN);sumSet("hostSum",F.hosts,HOSTN);sumSet("visSum",F.vis,VISN);sumSet("ctaSum",F.cta);sumSet("typeSum",F.types);
+function updSums(){sumSet("mechSum",F.mechs,MECHN);sumSet("dirSum",F.dirs,DIRN);sumSet("hostSum",F.hosts,HOSTN);sumSet("visSum",F.vis,VISN);sumSet("ctaSum",F.cta);sumSet("typeSum",F.types);
   const d=$("dirSum"); if(d&&F.dirMain&&F.dirs.size)d.querySelector("span").textContent+=" · основное";}
 document.addEventListener("click",ev=>{document.querySelectorAll("details.dd[open]").forEach(d=>{if(!d.contains(ev.target))d.open=false;});});
 document.addEventListener("toggle",ev=>{const t=ev.target;if(t.matches&&t.matches("details.dd")&&t.open)document.querySelectorAll("details.dd[open]").forEach(d=>{if(d!==t)d.open=false;});},true);
@@ -364,6 +374,7 @@ function filtered(opt={}){
     const fai=$("fai").value; if(fai){const ag=String((c.analysis||{}).ai_generated||"").toLowerCase(), av=/^(да|частично)/.test(ag), ap=!!c.ai;
       if(fai==="ai"&&!(ap||av))return false; if(fai==="aiprof"&&!ap)return false; if(fai==="aivid"&&!av)return false; if(fai==="noai"&&(ap||av))return false;}
     if(!opt.noVis&&F.vis.size&&!visOf(c).some(d=>F.vis.has(d)))return false;
+    if(!opt.noMech&&F.mechs.size&&!mechOf(c).some(d=>F.mechs.has(d)))return false;
     if(q&&![c.author,c.title,c.keyword,A_(c).hook_0_3s,A_(c).cta,c.note,c.reason].join(" ").toLowerCase().includes(q))return false;
     return true;});
   const d=F.dir||1;
@@ -392,7 +403,7 @@ function renderSrc(){
 function thumbSrc(c){return c.platform==="YouTube"?`https://i.ytimg.com/vi/${raw(c.id)}/hqdefault.jpg`:`/api/thumb?id=${encodeURIComponent(c.id)}`;}
 let LIST=[];
 function renderList(){
-  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderAxis("hostBox",HOSTS,F.hosts,hostOf,"noHost","togHost"); renderAxis("visBox",VISS,F.vis,visOf,"noVis","togVis"); updSums(); renderSrc(); renderHead();
+  LIST=filtered(); const shown=LIST.slice(0,limit); renderQueues(); renderDirs(); renderAxis("hostBox",HOSTS,F.hosts,hostOf,"noHost","togHost"); renderMech(); renderAxis("visBox",VISS,F.vis,visOf,"noVis","togVis"); updSums(); renderSrc(); renderHead();
   $("cnt").innerHTML=`<b style="color:#fff">${LIST.length}</b> роликов`;
   $("lstat").textContent=`всего ${V.length} · нужно ${V.filter(x=>x.label==="good").length} · мусор ${V.filter(x=>x.label==="bad").length}`;
   $("rows").innerHTML=shown.length?shown.map(row).join(""):`<div class="empty">${REST_LOAD&&$("fs").value==="profile_rest"?"Загружаю «не выстрелы» профилей…":V.length?"Ничего не найдено — поменяйте фильтры":"Роликов пока нет — запустите сбор во вкладке «Запуски»"}</div>`;
@@ -482,6 +493,7 @@ function renderTab(){
      <dt>Хук 0–3 с</dt><dd>${e(a.hook_0_3s)} <span class="muted">(${e(a.hook_type)})</span></dd>
      <dt>Формат</dt><dd>${e(a.format)}</dd>
      <dt>Направление</dt><dd>${c.directions?c.directions.split(",").map((d,i)=>i?`<span class="muted">${e(DIRN[d]||d)}</span>`:`<b>${e(DIRN[d]||d)}</b>`).join(" · "):'<span class="muted">не размечено</span>'}</dd>
+     <dt>Механизм</dt><dd>${c.mechanisms?c.mechanisms.split(",").map((d,i)=>i?`<span class="muted">${e(MECHN[d]||d)}</span>`:`<b>${e(MECHN[d]||d)}</b>`).join(" · ")+(c.mech_note?` <span class="muted">— ${e(c.mech_note)}</span>`:""):'<span class="muted">не размечено</span>'}</dd>
      <dt>Ведущий</dt><dd>${c.host?e(HOSTN[c.host]||c.host):'<span class="muted">не размечено</span>'}</dd>
      <dt>Визуал</dt><dd>${c.visuals?c.visuals.split(",").map((d,i)=>i?`<span class="muted">${e(VISN[d]||d)}</span>`:`<b>${e(VISN[d]||d)}</b>`).join(" · "):'<span class="muted">не размечено</span>'}</dd>
      <dt>Тип</dt><dd>${e((c.content_type||"").replace(/_/g," "))}</dd>

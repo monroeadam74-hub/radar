@@ -60,7 +60,7 @@ async function ensure(env) {
   for (const a of ["ALTER TABLE labels ADD COLUMN reason TEXT", "ALTER TABLE videos ADD COLUMN source TEXT",
                    "ALTER TABLE videos ADD COLUMN vs_median REAL", "ALTER TABLE profiles ADD COLUMN ai INTEGER",
                    "ALTER TABLE videos ADD COLUMN direction TEXT", "ALTER TABLE videos ADD COLUMN directions TEXT", "ALTER TABLE videos ADD COLUMN dir_v INTEGER",
-                   "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN visual TEXT", "ALTER TABLE videos ADD COLUMN visuals TEXT",
+                   "ALTER TABLE videos ADD COLUMN host TEXT", "ALTER TABLE videos ADD COLUMN mechanism TEXT", "ALTER TABLE videos ADD COLUMN mechanisms TEXT", "ALTER TABLE videos ADD COLUMN mech_note TEXT", "ALTER TABLE videos ADD COLUMN mech_v INTEGER", "ALTER TABLE videos ADD COLUMN visual TEXT", "ALTER TABLE videos ADD COLUMN visuals TEXT",
                    "ALTER TABLE profiles ADD COLUMN bio TEXT", "ALTER TABLE profiles ADD COLUMN ext_url TEXT"]) {
     try { await env.DB.prepare(a).run(); } catch {}
   }
@@ -162,7 +162,7 @@ async function api(req, env, url) {
     const cols = `v.id, v.platform, v.vertical, v.url, v.author, v.author_id, substr(v.title,1,600) AS title, v.published, v.duration, v.lang, v.keyword,
         v.views, v.likes, v.comments, v.shares, v.followers, v.outlier, v.status, v.prefilter, v.nutra_score, v.content_type,
         CASE WHEN v.analysis IS NULL THEN NULL ELSE ${slim} END AS analysis, v.first_seen, v.source, v.vs_median, v.direction, v.directions,
-        v.host, v.visual, v.visuals, COALESCE(pr.ai, 0) AS ai, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden`;
+        v.host, v.visual, v.visuals, v.mechanism, v.mechanisms, v.mech_note, COALESCE(pr.ai, 0) AS ai, l.v AS label, l.note AS note, l.reason AS reason, COALESCE(l.hidden, 0) AS hidden`;
     const from = "FROM videos v LEFT JOIN labels l ON l.id = v.id LEFT JOIN profiles pr ON pr.id = v.author_id";
     let rows = [], counts = {};
     try {
