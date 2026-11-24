@@ -1,0 +1,429 @@
+[
+{
+"h": "eco.tonic",
+"f": 2382647,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "wellnessmaddie1",
+"f": 1257782,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "mother.satori",
+"f": 1154348,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "mama_ayanna.healing",
+"f": 1133816,
+"lang": "EN",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "kenjilifejapan",
+"f": 1048520,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "doyunpiel",
+"f": 1037302,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "elisabeth.says",
+"f": 965723,
+"lang": "EN",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "abram.anderson",
+"f": 922613,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "lossweght",
+"f": 913533,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "laabuelamei",
+"f": 900562,
+"lang": "ES",
+"type": "ИИ-мудрец",
+"ai": 1
+},
+{
+"h": "healthyolifetoday",
+"f": 834912,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "simpleholisticlife.247",
+"f": 824098,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "naturalhealinglab",
+"f": 749272,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "lucasfuentesofficial",
+"f": 730522,
+"lang": "ES",
+"type": "ИИ-мудрец",
+"ai": 1
+},
+{
+"h": "lifegreenhealthy",
+"f": 713241,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "elenacarbajosa.digestiva",
+"f": 678158,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "americanfarmwellness",
+"f": 674637,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "todd.everydayremedies",
+"f": 668977,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "manifestableglowup",
+"f": 601388,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "askoliviahealth",
+"f": 536637,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "dr.kenjiwatanabe",
+"f": 523400,
+"lang": "ES",
+"type": "ИИ-врач",
+"ai": 1
+},
+{
+"h": "soyalicia.remedios",
+"f": 512594,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "travisonwellness",
+"f": 493031,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "annashealthsecrets",
+"f": 487087,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "vanessa.healthtips",
+"f": 452243,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "mindglow9999",
+"f": 443578,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "pablo.bienestar",
+"f": 422187,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "lasrecetasdemiabuela52",
+"f": 409733,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "itscharles.health",
+"f": 405443,
+"lang": "EN",
+"type": "ИИ-врач",
+"ai": 1
+},
+{
+"h": "camargoteam07",
+"f": 393238,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "health.is.strength",
+"f": 367815,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "nutricion.inteligente.app",
+"f": 364170,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "chen.medicina.china",
+"f": 356178,
+"lang": "ES",
+"type": "ИИ-мудрец",
+"ai": 1
+},
+{
+"h": "nutriglow_x",
+"f": 318366,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "patricia.flores1964",
+"f": 310367,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "emmahealthrecipes",
+"f": 303558,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "max.everydayremedies",
+"f": 281122,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "tryvitala",
+"f": 277474,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "nathan.wellness",
+"f": 272521,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "liangsvitality",
+"f": 259468,
+"lang": "EN",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "terryhale.ofc",
+"f": 256259,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "aionnaturelab",
+"f": 254216,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "sac.hikomori",
+"f": 237057,
+"lang": "ES",
+"type": "ИИ-мудрец",
+"ai": 1
+},
+{
+"h": "holistichealthplanet",
+"f": 232923,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "tylerwellnessdaily",
+"f": 230034,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "wellness4diabetic",
+"f": 228478,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "carmen.ruiz1970",
+"f": 221892,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "mateorivas.remedios",
+"f": 201987,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "come.ricosinculpa",
+"f": 190318,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "aldenquesada.dr",
+"f": 172954,
+"lang": "ES",
+"type": "ИИ-врач",
+"ai": 1
+},
+{
+"h": "abuelita.remedios",
+"f": 169263,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "recetas.paradiabetico.200",
+"f": 166397,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "forgotten.healing",
+"f": 164094,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "meerapatelwellness",
+"f": 161605,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "maryyodercleans",
+"f": 147610,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "zendayahealthtips",
+"f": 138650,
+"lang": "EN",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "glowingwithlucia",
+"f": 135928,
+"lang": "EN",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "isacarollina_",
+"f": 134257,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "health.paramount",
+"f": 119603,
+"lang": "ES",
+"type": "ИИ-холистик",
+"ai": 1
+},
+{
+"h": "abuela.abby",
+"f": 111461,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+},
+{
+"h": "grannyopal_",
+"f": 107723,
+"lang": "ES",
+"type": "ИИ-бабушка/дед",
+"ai": 1
+}
+]

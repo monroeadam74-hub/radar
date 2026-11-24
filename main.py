@@ -2079,7 +2079,9 @@ def run_wave(db):
     spent = 0.0
 
     # 1) новые аккаунты волны
-    lst = json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", "wave_list.json"), encoding="utf-8"))
+    lst_name = ENV("RADAR_LISTFILE") or S.get("wave_list_file", "wave_list.json")   # другой список: ai_wave_list.json (ИИ-персонажи)
+    lst = json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", lst_name), encoding="utf-8"))
+    J["list"] = lst_name
     have = {r["id"] for r in db.q("SELECT id FROM profiles")}
     todo = [x for x in lst if "ig:" + x["h"].lower() not in have]
     # добор: аккаунты прошлых волн, которые сборщик не досканировал (обрыв актора по времени 23.11) — один раз
@@ -2114,6 +2116,8 @@ def run_wave(db):
         add_profile(db, "Instagram", x["h"])
         pid = "ig:" + x["h"].lower()
         db.q("UPDATE profiles SET deep=0, active=1, wave=?, followers=COALESCE(followers, ?) WHERE id=?", [J["date"], x.get("f"), pid])
+        if x.get("ai"):
+            db.q("UPDATE profiles SET ai=1 WHERE id=?", [pid])
         ids.add(pid)
     J["accounts"] = len(ids); J["left_accounts"] = len(todo) - len([x for x in take if x in todo])
     log(f"Волна {J['date']}: аккаунтов {len(ids)} (осталось в списке после неё {J['left_accounts']}), до {reels} роликов с аккаунта")
