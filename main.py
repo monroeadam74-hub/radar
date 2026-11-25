@@ -1923,7 +1923,8 @@ def run_profiles(db, only=None, analyze_now=True, deep_n=None):
 MECHS = [("supplement", "БАД / добавка"), ("food", "Продукт / рецепт"), ("drink", "Напиток / настой"),
          ("exercise", "Упражнение / растяжка"), ("topical", "Мазь / наружное"), ("selfmassage", "Самомассаж / техника"),
          ("habit", "Привычка / образ жизни"), ("drug", "Аптечное лекарство"), ("clinic", "Процедура / клиника"),
-         ("device", "Устройство / товар"), ("visit", "Запись к специалисту"), ("none", "Без решения"), ("other", "Другое")]
+         ("device", "Устройство / товар"), ("visit", "Запись к специалисту"), ("folk", "Народное средство"), ("info", "Книга / курс / инфопродукт"),
+         ("nothealth", "Не о здоровье"), ("none", "Без решения"), ("other", "Другое")]
 MECH_KEYS = {k for k, _ in MECHS}
 MECH_VERSION = 1
 MECHCLASS = """По разбору ролика о здоровье определи МЕХАНИЗМ РЕШЕНИЯ — чем ролик предлагает решить проблему.
@@ -1932,7 +1933,9 @@ MECHCLASS = """По разбору ролика о здоровье опреде
 Правила: visit — решение через визит/консультацию/клинику/онлайн-приём («запишись ко мне», «приходи», «ссылка на приём»);
 none — названа проблема или разоблачён миф, но НЕ сказано, что делать, и никуда не зовут; clinic — конкретная медицинская процедура
 (уколы, операция, физиотерапия), а не просто «приходи»; food — еда/рецепт; drink — напиток/настой/вода/чай; supplement — капсулы,
-порошки, витамины, добавки. Если ни один ключ не подходит — "other".
+порошки, витамины, добавки; folk — народное/бабушкино средство (компресс из капусты, сода, лук, «старый рецепт»);
+info — решение через книгу, курс, марафон, гайд, приложение, вебинар; nothealth — ролик вообще не о здоровье (юмор, лайфстайл,
+личное, реклама не по теме). Если ни один ключ не подходит — "other".
 Для каждого ролика: "mech" — основной ключ, "extra" — 0–2 дополнительных (только если реально есть в ролике),
 "what" — что конкретно предлагают, 2–7 слов по-русски («коллаген по утрам», «3 упражнения на колени», «приём у ортопеда»).
 Ролики:
@@ -2552,6 +2555,40 @@ def main():
         for h in hs:
             db.q("UPDATE profiles SET ai=1 WHERE id=?", ["ig:" + h.lower()])
         log("Метка ИИ:", len(hs), "ников;", db.q("SELECT COUNT(*) n FROM profiles WHERE ai=1")[0]["n"], "профилей помечено")
+        return
+    if ENV("RADAR_MODE") == "fixups":   # хвосты по собранной базе: потерянные выстрелы, хвосты, направления, механизмы
+        tries = json.loads((db.q("SELECT v FROM kv WHERE k='wave_tries'") or [{"v": "{}"}])[0]["v"] or "{}")
+        for r in db.q("""SELECT id, views, vs_median, status, published FROM videos WHERE author_id='ig:holisticuniversity'
+                         ORDER BY views DESC LIMIT 8"""):
+            log("HOLISTIC", r["id"], r["views"], r["vs_median"], r["status"], r["published"], "tries", tries.get(r["id"]))
+        x_min, floor = float(S.get("profile_outlier_min", 2)), int(S.get("profile_min_views", 100000))
+        lost = db.q("""SELECT id FROM videos WHERE source='profile' AND platform='Instagram' AND status='profile_rest'
+                       AND vs_median >= ? AND views >= ?""", [x_min, floor])
+        hidden = {r["id"] for r in db.q("SELECT id FROM labels WHERE hidden=1")}
+        lost = [r["id"] for r in lost if r["id"] not in hidden]
+        gave = [i for i in lost if tries.get(i, 0) >= 3]
+        missed = [i for i in lost if tries.get(i, 0) < 3]
+        log(f"FIX потерянные выстрелы: всего {len(lost)}, после 3 попыток ссылки {len(gave)}, не попали в очередь {len(missed)}")
+        cap = int(ENV("RADAR_MAX_ANALYZE") or 250)
+        retry = (missed + gave)[:cap]
+        if len(lost) > cap:
+            log(f"FIX больше потолка {cap}: возвращаю в очередь первые {cap}, остальное — после решения владельца")
+        for i in gave:
+            if i in retry:
+                tries[i] = 2   # ещё одна попытка свежей ссылки
+        db.q("INSERT OR REPLACE INTO kv VALUES ('wave_tries', ?)", [json.dumps(tries)])
+        for k in range(0, len(retry), 150):
+            db.q("UPDATE videos SET status='queued' WHERE id IN (%s)" % ",".join(lit(i) for i in retry[k:k + 150]))
+        log(f"FIX в очередь: {len(retry)}")
+        os.environ["RADAR_WAVE"] = "0"
+        stats = run_wave(db)   # без новых аккаунтов: очередь + хвосты + направления + механизмы
+        from google import genai
+        if ENV("GEMINI_KEY_PAID"):
+            cl = genai.Client(api_key=ENV("GEMINI_KEY_PAID"))
+            classify_mechanisms(db, limit=3000, model=S.get("wave_cls_model", "gemini-3.1-flash-lite"), client=cl, threads=8, keys=["other"])
+        mech_report(db)
+        db.q("INSERT INTO runs VALUES (?,?,?,?,?,?)", [NOW.isoformat(timespec="seconds"), stats["found"], stats["new"],
+             stats["analyzed"], 0, "\n".join(LOG)[-20000:]])
         return
     if ENV("RADAR_MODE") == "wave":
         stats = run_wave(db)
