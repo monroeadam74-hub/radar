@@ -24,6 +24,12 @@ on:
       max_analyze:
         description: "Сколько роликов разобрать за запуск (пусто = из настроек)"
         default: ""
+      listfile:
+        description: "Волна: файл списка в research/ (пусто = из переменной репозитория или wave_list.json)"
+        default: ""
+      paid_cap:
+        description: "Волна: общий потолок трат платного ключа Gemini, $ (пусто = из настроек, 45)"
+        default: ""
 
 jobs:
   run:
@@ -51,7 +57,8 @@ jobs:
           RADAR_IGTEST: ${{ inputs.igtest }}
           RADAR_BUDGET: ${{ inputs.budget }}
           RADAR_WAVE: ${{ inputs.wave }}
-          RADAR_LISTFILE: ${{ vars.RADAR_LISTFILE }}
+          RADAR_LISTFILE: ${{ inputs.listfile || vars.RADAR_LISTFILE }}
+          RADAR_PAID_CAP: ${{ inputs.paid_cap }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

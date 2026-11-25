@@ -2165,7 +2165,7 @@ def run_wave(db):
     done = {}   # id → (base analysis, set of done roles)
     state = {"cls": {"model": m_cls, "off": None, "n": 0, "client": None}, "txt": {"model": m_txt, "off": None, "n": 0, "client": None}}
     # платный ключ (отдельный проект Google с оплатой) — только для модели-классификатора; 3.5 остаётся на бесплатном
-    paid_cap = float(S.get("wave_paid_usd", 45))
+    paid_cap = float(ENV("RADAR_PAID_CAP") or S.get("wave_paid_usd", 45))
     paid_max = int(paid_cap / 0.0045)        # потолок по числу разборов (факт 22.11: ~$0.0043 за разбор 3.1)
     if ENV("GEMINI_KEY_PAID"):
         from google import genai
