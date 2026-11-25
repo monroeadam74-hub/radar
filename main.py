@@ -1161,6 +1161,25 @@ geni.us / сайты-лендинги добавок или книг); "type": "
 {items}"""
 
 
+JOINT_PICK = """Это ники и имена Instagram-аккаунтов из блока «похожие» у блогеров про суставы, спину и боль
+(физиотерапевты, хиропрактики, ортопеды, реабилитологи, остеопаты, тренеры по мобильности, паблики «боль в спине/коленях»).
+Нужны именно такие аккаунты. Язык: английский, испанский или португальский — испанские и бразильские особенно ценны.
+НЕ нужны: бодибилдинг и фитнес без темы боли; спортсмены и команды; юмор; мода; Индия и хинди; мелкие клиники-визитки.
+Оцени по имени и нику: 3 — явно про суставы/спину/боль/реабилитацию; 2 — вероятно; 1 — сомнительно; 0 — явно не то.
+Верни JSON-список: [{{"u": "ник", "s": 0-3}}]
+Аккаунты:
+{items}"""
+
+JOINT_LABEL = """Для каждого Instagram-аккаунта по имени, категории, описанию (био) и ссылке определи:
+"fit": "да" — основная тема суставы/спина/боль/реабилитация, "частично" — тема есть, но не главная (спорт, общий фитнес, общее здоровье),
+"нет" — не в нише; "ai": "да"/"нет" — похоже ли на ИИ-персонажа; "type": "Физиотерапевт" / "Хиропрактик" / "Ортопед" / "Остеопат" /
+"Тренер (мобильность)" / "Паблик" / "Бренд/товар" / "Другое"; "spec": что продвигают, коротко по-русски;
+"lang": EN / ES / PT / другое; "excluded": true, если Индия/хинди.
+Верни JSON-список: [{{"u": "ник", "fit": "да", "ai": "нет", "type": "...", "spec": "...", "lang": "EN", "excluded": false}}]
+Аккаунты:
+{items}"""
+
+
 def lookalike():
     """Похожие на заданные аккаунты (RADAR_IGTEST — ники через запятую): похожие → отбор по имени → проверка профиля.
     Жёсткий потолок — RADAR_BUDGET."""
@@ -1171,7 +1190,15 @@ def lookalike():
         log("Нет бюджета или семян — ничего не запускаю"); return
     ac = apify(); spent = 0.0
     kind_ai = ENV("RADAR_MODE") == "aisnow"
-    PICK, LABEL = (AI_PICK, AI_LABEL) if kind_ai else (NAT_PICK, NAT_LABEL)
+    kind_j = ENV("RADAR_MODE") == "jointsnow"
+    PICK, LABEL = (AI_PICK, AI_LABEL) if kind_ai else (JOINT_PICK, JOINT_LABEL) if kind_j else (NAT_PICK, NAT_LABEL)
+    known = set()
+    if kind_j:   # уже известные: семена, рейтинги, база радара — заново не проверяем
+        known = set()
+        try:
+            known |= {x.lower() for x in json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", "joints_known.json")))}
+        except Exception:
+            pass
     paid = None
     if ENV("GEMINI_KEY_PAID"):
         from google import genai
@@ -1198,7 +1225,7 @@ def lookalike():
     votes, names = {}, {}
     for it in rel:
         u = (it.get("username") or "").lower()
-        if u and u not in seeds:
+        if u and u not in seeds and u not in known:
             votes[u] = votes.get(u, 0) + 1; names[u] = it.get("full_name") or ""
     log(f"Похожие: {len(rel)} записей, уникальных {len(votes)}, потрачено ${spent:.2f}")
     score = {}
@@ -1216,7 +1243,7 @@ def lookalike():
     pick = [u for u in cands if score.get(u, 0) >= 2]
     pick.sort(key=lambda u: (score.get(u, 0), votes[u]), reverse=True)
     n_max = int((budget - spent - 0.05) / 0.0026)
-    pick = (seeds + pick)[:max(0, n_max)]
+    pick = (pick if kind_j else seeds + pick)[:max(0, n_max)]
     log(f"Отбор: из {len(cands)} подходят {len([u for u in cands if score.get(u, 0) >= 2])}, проверяем {len(pick)}")
     profs = []
     if pick:
@@ -2506,7 +2533,7 @@ def main():
     if ENV("RADAR_MODE") == "natsnow":
         nat_snow()
         return
-    if ENV("RADAR_MODE") in ("lookalike", "aisnow"):
+    if ENV("RADAR_MODE") in ("lookalike", "aisnow", "jointsnow"):
         lookalike()
         return
     if ENV("RADAR_MODE") == "medsnow":
