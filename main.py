@@ -2624,6 +2624,41 @@ def main():
             db.q("UPDATE profiles SET ai=1 WHERE id=?", ["ig:" + h.lower()])
         log("Метка ИИ:", len(hs), "ников;", db.q("SELECT COUNT(*) n FROM profiles WHERE ai=1")[0]["n"], "профилей помечено")
         return
+    if ENV("RADAR_MODE") == "export":   # выгрузка разобранных выстрелов по направлениям/авторам — только чтение базы
+        import gzip, base64
+        dirs = [d.strip() for d in (ENV("RADAR_IGTEST") or "knees,back").split(",") if d.strip()]
+        lst = ENV("RADAR_LISTFILE") or "joints_wave_list.json"
+        try:
+            auth = ["ig:" + x["h"].lower() for x in json.load(open(os.path.join(os.path.dirname(__file__) or ".", "research", lst)))]
+        except Exception:
+            auth = []
+        keys = ("hook_type", "format", "content_type", "host", "visuals", "cta", "cta_mechanic", "emotion", "why_it_works",
+                "how_to_adapt", "nutra_score", "nutra_reason", "moderation_risk", "target_audience", "pace", "face_share",
+                "ai_generated", "product_mentioned", "on_screen_text", "first_words_sec", "voice", "music", "cuts", "captions")
+        out, off = [], 0
+        cond = "(direction IN (%s) OR author_id IN (%s))" % (",".join(lit(d) for d in dirs), ",".join(lit(a) for a in auth) or "''")
+        while True:
+            rows = db.q(f"""SELECT id, url, author, author_id, views, likes, comments, shares, vs_median, duration, published,
+                                   direction, mechanism, mechanisms, analysis, subtitles FROM videos
+                            WHERE status='analyzed' AND {cond} ORDER BY vs_median DESC LIMIT 400 OFFSET {off}""")
+            for r in rows:
+                a = json.loads(r.pop("analysis") or "{}")
+                subs = r.pop("subtitles")
+                subs = json.loads(subs) if isinstance(subs, str) and subs else (subs or [])
+                r["a"] = {k: a.get(k) for k in keys if a.get(k) not in (None, "", [])}
+                r["s"] = " ".join((x.get("ru") or x.get("orig") or "") for x in subs[:6] if isinstance(x, dict))[:400]
+                r["s_orig"] = " ".join((x.get("orig") or "") for x in subs[:4] if isinstance(x, dict))[:300]
+                out.append(r)
+            off += len(rows)
+            if len(rows) < 400:
+                break
+        blob = base64.b64encode(gzip.compress(json.dumps(out, ensure_ascii=False).encode())).decode()
+        print(f"EXPORT rows={len(out)}")
+        print("EXPORT_BEGIN")
+        for i in range(0, len(blob), 20000):
+            print(blob[i:i + 20000])
+        print("EXPORT_END")
+        return
     if ENV("RADAR_MODE") == "fixups":   # хвосты по собранной базе: потерянные выстрелы, хвосты, направления, механизмы
         tries = json.loads((db.q("SELECT v FROM kv WHERE k='wave_tries'") or [{"v": "{}"}])[0]["v"] or "{}")
         for r in db.q("""SELECT id, views, vs_median, status, published FROM videos WHERE author_id='ig:holisticuniversity'
