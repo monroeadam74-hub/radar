@@ -2071,6 +2071,36 @@ def merge_an(base, cls=None, txt=None, cls_m=None, txt_m=None):
     return m
 
 
+def cached_links(hours=60):
+    """Ссылки на видео из наборов данных недавних запусков сборщика рилсов (бесплатно: чтение хранилища, без новых запусков).
+    Ссылки Instagram живут ~1–3 дня — берём только свежие запуски."""
+    out = {}
+    try:
+        ac = apify()
+        since = NOW - dt.timedelta(hours=hours)
+        runs = ac.runs().list(desc=True, limit=200).items
+        for rn in runs:
+            st = _f(rn, "startedAt", "started_at")
+            st = st if isinstance(st, dt.datetime) else (dt.datetime.fromisoformat(str(st).replace("Z", "+00:00")) if st else None)
+            if st and st.tzinfo is None:
+                st = st.replace(tzinfo=dt.timezone.utc)
+            if not st or st < since:
+                continue
+            ds = _f(rn, "defaultDatasetId", "default_dataset_id")
+            try:
+                for it in ac.dataset(ds).iterate_items(fields=["shortCode", "shortcode", "code", "videoUrl", "video_url"]):
+                    sc = it.get("shortCode") or it.get("shortcode") or it.get("code")
+                    vu = it.get("videoUrl") or it.get("video_url")
+                    if sc and vu:
+                        out["ig_" + sc] = vu
+            except Exception as e:
+                log("  набор не прочитался:", str(e)[:120])
+    except Exception as e:
+        log("Сохранённые ссылки: недоступны —", str(e)[:200])
+    log(f"Сохранённые ссылки из прошлых запусков: {len(out)}")
+    return out
+
+
 def fresh_links(urls, budget_usd):
     """Свежие ссылки на видео Instagram (официальный сборщик по прямым ссылкам, ~$0.0023 за ролик) с потолком трат."""
     n = min(len(urls), int(budget_usd / 0.0027))
@@ -2128,7 +2158,7 @@ def run_wave(db):
     take = todo[:size]
     if ENV("RADAR_IGTEST"):          # ручной список ников для пробы
         take = [{"h": h.strip().lstrip("@")} for h in ENV("RADAR_IGTEST").split(",") if h.strip()]
-    if ENV("RADAR_IGTEST"):
+    if ENV("RADAR_IGTEST") or ENV("RADAR_WAVE") == "0":   # волна «0» — только хвосты и разметка, без сбора
         redo = []
     redo = redo[: int(budget / (reels * 0.001))]
     est = (len(take) + len(redo)) * reels * 0.001
@@ -2271,6 +2301,8 @@ def run_wave(db):
     # 3) хвосты прошлых дней: невыполненные выстрелы и разборы одной моделью — со свежими ссылками, пока есть лимит
     tail_n = 0
     tries = json.loads((db.q("SELECT v FROM kv WHERE k='wave_tries'") or [{"v": "{}"}])[0]["v"] or "{}")
+    apify_off = bool(ENV("RADAR_NO_APIFY"))
+    cached = cached_links(hours=int(ENV("RADAR_CACHE_H") or 60))
     for rnd in range(20):
         if (state["cls"]["off"] and state["txt"]["off"]) or time.time() - t0 > max_min * 60 or budget - spent < 0.3:
             break
@@ -2284,16 +2316,25 @@ def run_wave(db):
         rows = [r for r in rows if roles_left(json.loads(r["analysis"]) if r["status"] == "analyzed" and r["analysis"] else None)][:100]
         if not rows:
             break
-        try:
-            links, cost = fresh_links([r["url"] for r in rows], min(budget - spent, 0.3))
-        except Exception as e:   # например, неоплаченный счёт Apify — останавливаем хвост, журнал всё равно пишем
-            log("  Apify: остановка хвоста —", str(e)[:200]); J["apify_error"] = str(e)[:200]
-            break
-        spent += cost
+        if apify_off:   # Apify недоступен — берём только ролики со ссылками из наборов прошлых запусков
+            rows = [r for r in rows if r["id"] in cached]
+            if not rows:
+                break
+        links = {r["id"]: cached[r["id"]] for r in rows if r["id"] in cached}
+        need = [r for r in rows if r["id"] not in links]
+        if need and not apify_off:
+            try:
+                fl, cost = fresh_links([r["url"] for r in need], min(budget - spent, 0.3))
+                links.update(fl); spent += cost
+            except Exception as e:   # например, лимит или неоплаченный счёт Apify — дальше только по сохранённым ссылкам
+                log("  Apify: свежие ссылки недоступны —", str(e)[:200]); J["apify_error"] = str(e)[:200]
+                apify_off = True
         jobs = []
         for r in rows:
             in_q.add(r["id"])
             if r["id"] not in links:
+                if apify_off:
+                    continue
                 tries[r["id"]] = tries.get(r["id"], 0) + 1
                 if tries[r["id"]] >= 3:   # 3 попытки — дальше не тратим деньги
                     if r["status"] == "queued":
