@@ -2634,9 +2634,11 @@ def main():
             auth = []
         keys = ("hook_type", "format", "content_type", "host", "visuals", "cta", "cta_mechanic", "emotion", "why_it_works",
                 "how_to_adapt", "nutra_score", "nutra_reason", "moderation_risk", "target_audience", "pace", "face_share",
-                "ai_generated", "product_mentioned", "on_screen_text", "first_words_sec", "voice", "music", "cuts", "captions")
+                "ai_generated", "product_mentioned", "first_words_sec", "voice", "music", "language", "direction_extra")
         out, off = [], 0
         cond = "(direction IN (%s) OR author_id IN (%s))" % (",".join(lit(d) for d in dirs), ",".join(lit(a) for a in auth) or "''")
+        if dirs == ["all"]:
+            cond = "source='profile'"
         while True:
             rows = db.q(f"""SELECT id, url, author, author_id, views, likes, comments, shares, vs_median, duration, published,
                                    direction, mechanism, mechanisms, analysis, subtitles FROM videos
@@ -2648,6 +2650,7 @@ def main():
                 r["a"] = {k: a.get(k) for k in keys if a.get(k) not in (None, "", [])}
                 r["s"] = " ".join((x.get("ru") or x.get("orig") or "") for x in subs[:6] if isinstance(x, dict))[:400]
                 r["s_orig"] = " ".join((x.get("orig") or "") for x in subs[:4] if isinstance(x, dict))[:300]
+                r["lang"] = a.get("language")
                 out.append(r)
             off += len(rows)
             if len(rows) < 400:
