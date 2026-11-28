@@ -1,0 +1,32 @@
+name: apitest
+on:
+  workflow_dispatch: {}
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          APP_USERS: ${{ secrets.APP_USERS }}
+        run: |
+          B=https://radar.sandboxmonroe.com
+          python3 -c "
+          import os,json,re;raw=os.environ.get('APP_USERS','').strip().strip('\"'+chr(39)+'\x60');p=[x for x in re.split(r'[;\n]',raw) if ':' in x][0];l,_,w=p.partition(':');json.dump({'login':l.strip(),'password':w.strip()},open('cred.json','w'))"
+          curl -s -c jar.txt -o /dev/null -w "login %{http_code}\n" -H "content-type: application/json" --data @cred.json "$B/api/login"; rm -f cred.json
+          echo "== openapi (без ключа)"; curl -s -o /dev/null -w "code %{http_code}\n" "$B/api/v1/openapi.json"
+          echo "== stats без ключа (ждём 401)"; curl -s -o /dev/null -w "code %{http_code}\n" "$B/api/v1/stats"
+          # временный ключ (в лог не печатается, в конце отзывается)
+          curl -s -b jar.txt -H "content-type: application/json" --data '{"name":"apitest (временный)"}' "$B/api/apikeys" > k.json
+          K=$(python3 -c "import json;print(json.load(open('k.json'))['key'])"); ID=$(python3 -c "import json;print(json.load(open('k.json'))['id'])"); rm -f k.json
+          echo "::add-mask::$K"
+          H="Authorization: Bearer $K"
+          echo "== schema"; curl -s -H "$H" "$B/api/v1/schema" | python3 -c "import json,sys;d=json.load(sys.stdin);print([t['name'] for t in d.get('tables',[])], d.get('error'))"
+          echo "== stats"; curl -s -H "$H" "$B/api/v1/stats" | head -c 600; echo
+          echo "== videos"; curl -s -H "$H" "$B/api/v1/videos?direction=knees&limit=3" | head -c 900; echo
+          echo "== video"; curl -s -H "$H" "$B/api/v1/video?id=ig_DdZ_864kssT" | head -c 400; echo
+          echo "== query"; curl -s -H "$H" -H "content-type: application/json" --data '{"sql":"SELECT direction, COUNT(*) n FROM videos WHERE status=\"analyzed\" GROUP BY direction ORDER BY n DESC"}' "$B/api/v1/query" | head -c 800; echo
+          echo "== query WITH"; curl -s -H "$H" -H "content-type: application/json" --data '{"sql":"WITH t AS (SELECT json_extract(analysis,\"$.hook_type\") h, vs_median x FROM videos WHERE status=\"analyzed\") SELECT h, COUNT(*) n, ROUND(AVG(x),1) ax FROM t GROUP BY h ORDER BY n DESC LIMIT 5"}' "$B/api/v1/query" | head -c 600; echo
+          echo "== запись (ждём 400)"; curl -s -H "$H" -H "content-type: application/json" --data '{"sql":"DELETE FROM videos"}' "$B/api/v1/query"; echo
+          echo "== users (ждём 400)"; curl -s -H "$H" -H "content-type: application/json" --data '{"sql":"SELECT * FROM users"}' "$B/api/v1/query"; echo
+          echo "== админ-эндпоинт по ключу (ждём 401)"; curl -s -o /dev/null -w "code %{http_code}\n" -H "$H" -X POST "$B/api/run"
+          curl -s -b jar.txt -X DELETE -o /dev/null -w "ключ отозван %{http_code}\n" "$B/api/apikeys?id=$ID"
+          echo "== после отзыва (ждём 401)"; curl -s -o /dev/null -w "code %{http_code}\n" -H "$H" "$B/api/v1/stats"
