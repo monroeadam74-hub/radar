@@ -232,7 +232,18 @@ const MCP_TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
 ].map((t) => ({ ...t, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }));
 
+const MCP_CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, GET, DELETE, OPTIONS",
+  "access-control-allow-headers": "content-type, accept, authorization, mcp-session-id, mcp-protocol-version, last-event-id",
+  "access-control-expose-headers": "mcp-session-id" };
 async function mcp(req, env, url, key) {
+  const r = await mcpInner(req, env, url, key);
+  const h = new Headers(r.headers);
+  for (const [k, v] of Object.entries(MCP_CORS)) h.set(k, v);
+  return new Response(r.body, { status: r.status, headers: h });
+}
+async function mcpInner(req, env, url, key) {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204 });
+  if (req.method === "HEAD") return new Response(null, { status: 200 });
   if (req.method === "GET") return new Response("MCP: используйте POST", { status: 405, headers: { allow: "POST" } });
   if (req.method === "DELETE") return new Response(null, { status: 204 });
   if (req.method !== "POST") return new Response(null, { status: 405 });
@@ -287,6 +298,7 @@ async function mcp(req, env, url, key) {
     return out.length ? json(out) : new Response(null, { status: 202 });
   }
   const r = await one(body);
+  if (r && body.method === "initialize") return json(r, 200, { "mcp-session-id": crypto.randomUUID() });
   return r ? json(r) : new Response(null, { status: 202 });
 }
 
