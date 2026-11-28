@@ -1,0 +1,19 @@
+name: keys
+on:
+  workflow_dispatch: {}
+jobs:
+  k:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          APP_USERS: ${{ secrets.APP_USERS }}
+        run: |
+          B=https://radar.sandboxmonroe.com
+          python3 -c "
+          import os,json,re;raw=os.environ.get('APP_USERS','').strip().strip('\"'+chr(39)+'\x60');p=[x for x in re.split(r'[;\n]',raw) if ':' in x][0];l,_,w=p.partition(':');json.dump({'login':l.strip(),'password':w.strip()},open('cred.json','w'))"
+          curl -s -c jar.txt -o /dev/null -w "login %{http_code}\n" -H "content-type: application/json" --data @cred.json "$B/api/login"; rm -f cred.json
+          echo "== ключи (без самих ключей)"; curl -s -b jar.txt "$B/api/apikeys"; echo
+          echo "== well-known"; curl -s -o /dev/null -w "oauth-protected-resource %{http_code} %{content_type}\n" "$B/.well-known/oauth-protected-resource"
+          curl -s -o /dev/null -w "oauth-authorization-server %{http_code} %{content_type}\n" "$B/.well-known/oauth-authorization-server"
+          echo "== mcp GET с неверным ключом"; curl -s -m 20 -o /dev/null -w "%{http_code} %{content_type} %{time_total}\n" "$B/mcp/rdr_000000000000000000000000000000000000000000000000"
+          echo "== mcp GET sse"; curl -s -m 20 -o /dev/null -w "%{http_code} %{content_type} %{time_total}\n" -H "accept: text/event-stream" "$B/mcp/rdr_000000000000000000000000000000000000000000000000"
