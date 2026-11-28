@@ -294,7 +294,7 @@ async function loadKeys(){
   const rows=(r.keys||[]).map(k=>`<tr><td><b>${e(k.name)}</b></td><td>…${e(k.id)}</td><td>${fd(k.created)}</td><td>${fd(k.last_used)}</td><td>${k.uses||0}</td>
     <td><button class="btn" onclick="keyDel('${e(k.id)}','${e(k.name)}')">Отозвать</button></td></tr>`).join("");
   $("keybox").innerHTML=`<h3>Ключи API для ИИ (только чтение)</h3>
-    <p class="muted" style="margin:0 0 10px">Для ChatGPT и других ИИ: читают и анализируют всю базу (ролики, разборы, субтитры, профили), но не могут ничего менять, запускать или удалять. Схема для подключения: <code>${location.origin}/api/v1/openapi.json</code>. Ключ показывается один раз — в базе хранится только его хеш.</p>
+    <p class="muted" style="margin:0 0 10px">Для ChatGPT и других ИИ: читают и анализируют всю базу (ролики, разборы, субтитры, профили), но не могут ничего менять, запускать или удалять. ChatGPT подключается как MCP-коннектор по адресу <code>${location.origin}/mcp/&lt;ключ&gt;</code> (без авторизации — ключ уже в адресе). Для других ИИ — REST: <code>${location.origin}/api/v1/openapi.json</code> + заголовок Authorization: Bearer &lt;ключ&gt;. Ключ показывается один раз — в базе хранится только его хеш.</p>
     <table class="tbl" style="width:100%"><thead><tr><th>Название</th><th>Ключ</th><th>Создан</th><th>Последнее обращение</th><th>Запросов</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="6" class="muted">Ключей нет</td></tr>`}</tbody></table>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center"><input id="key_n" placeholder="Название, например ChatGPT" style="min-width:220px"><button class="btn pri" onclick="keyNew()">Создать ключ</button></div>
     <div id="key_out"></div>`;
@@ -303,7 +303,9 @@ async function keyNew(){const r=await fetch("/api/apikeys",{method:"POST",header
   if(!r.ok){toast(r.error||"Ошибка");return;}
   await loadKeys();
   $("key_out").innerHTML=`<div class="panel" style="margin-top:10px;border:2px solid var(--acc,#2a7)"><b>Новый ключ — скопируйте сейчас, больше он не покажется:</b>
-    <div style="display:flex;gap:8px;margin-top:8px"><input id="key_val" readonly value="${e(r.key)}" style="flex:1;font-family:monospace"><button class="btn" onclick="navigator.clipboard.writeText($('key_val').value);toast('Скопировано')">Копировать</button></div></div>`;}
+    <div style="display:flex;gap:8px;margin-top:8px"><input id="key_val" readonly value="${e(r.key)}" style="flex:1;font-family:monospace"><button class="btn" onclick="navigator.clipboard.writeText($('key_val').value);toast('Скопировано')">Копировать ключ</button></div>
+    <div style="margin-top:8px"><b>Адрес MCP-коннектора для ChatGPT:</b></div>
+    <div style="display:flex;gap:8px;margin-top:4px"><input id="key_mcp" readonly value="${location.origin}/mcp/${e(r.key)}" style="flex:1;font-family:monospace"><button class="btn" onclick="navigator.clipboard.writeText($('key_mcp').value);toast('Скопировано')">Копировать адрес</button></div></div>`;}
 async function keyDel(id,n){if(!confirm("Отозвать ключ «"+n+"»? ИИ с этим ключом сразу потеряет доступ."))return;
   const r=await fetch("/api/apikeys?id="+encodeURIComponent(id),{method:"DELETE"}).then(x=>x.json());if(r.ok){toast("Отозван");loadKeys();}else toast(r.error||"Ошибка");}
 function genPw(){const a="abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";const b=crypto.getRandomValues(new Uint32Array(14));return [...b].map(x=>a[x%a.length]).join("");}

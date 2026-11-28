@@ -28,5 +28,15 @@ jobs:
           echo "== запись (ждём 400)"; curl -s -H "$H" -H "content-type: application/json" --data '{"sql":"DELETE FROM videos"}' "$B/api/v1/query"; echo
           echo "== users (ждём 400)"; curl -s -H "$H" -H "content-type: application/json" --data '{"sql":"SELECT * FROM users"}' "$B/api/v1/query"; echo
           echo "== админ-эндпоинт по ключу (ждём 401)"; curl -s -o /dev/null -w "code %{http_code}\n" -H "$H" -X POST "$B/api/run"
+          M="$B/mcp/$K"
+          echo "== MCP initialize"; curl -s -H "content-type: application/json" -H "accept: application/json, text/event-stream" --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}' "$M" | head -c 300; echo
+          echo "== MCP initialized (ждём 202)"; curl -s -o /dev/null -w "code %{http_code}\n" -H "content-type: application/json" --data '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$M"
+          echo "== MCP tools/list"; curl -s -H "content-type: application/json" --data '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' "$M" | python3 -c "import json,sys;d=json.load(sys.stdin);print([t['name'] for t in d['result']['tools']])"
+          echo "== MCP run_query"; curl -s -H "content-type: application/json" --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"run_query","arguments":{"sql":"SELECT mechanism, COUNT(*) n FROM videos WHERE status=\"analyzed\" GROUP BY mechanism ORDER BY n DESC LIMIT 5"}}}' "$M" | head -c 500; echo
+          echo "== MCP search+fetch"; curl -s -H "content-type: application/json" --data '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search","arguments":{"query":"youngeryoudoc"}}}' "$M" | head -c 300; echo
+          curl -s -H "content-type: application/json" --data '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"fetch","arguments":{"id":"ig_DdZ_864kssT"}}}' "$M" | head -c 300; echo
+          echo "== MCP запись (ждём ошибку)"; curl -s -H "content-type: application/json" --data '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"run_query","arguments":{"sql":"UPDATE videos SET views=0"}}}' "$M"; echo
+          echo "== MCP чужой ключ (ждём 401)"; curl -s -o /dev/null -w "code %{http_code}\n" -H "content-type: application/json" --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "$B/mcp/rdr_000000000000000000000000000000000000000000000000"
           curl -s -b jar.txt -X DELETE -o /dev/null -w "ключ отозван %{http_code}\n" "$B/api/apikeys?id=$ID"
+          echo "== MCP после отзыва (ждём 401)"; curl -s -o /dev/null -w "code %{http_code}\n" -H "content-type: application/json" --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "$M"
           echo "== после отзыва (ждём 401)"; curl -s -o /dev/null -w "code %{http_code}\n" -H "$H" "$B/api/v1/stats"

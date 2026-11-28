@@ -210,6 +210,86 @@ async function v1(req, env, url) {
   return json({ error: "not found" }, 404);
 }
 
+// ===== MCP-сервер для ChatGPT (developer mode / плагины): адрес /mcp/<ключ>, только чтение =====
+const MCP_TOOLS = [
+  { name: "get_schema", title: "Схема базы", description: "Таблицы, колонки и пояснения к полям базы радара. Вызывайте первым.",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "get_stats", title: "Сводка", description: "Ролики по статусам, направления × механизмы, число аккаунтов.",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "list_videos", title: "Ролики с фильтрами", description: "Компактный список роликов. «Выстрел» = status shot (≥100 тыс. просмотров и ≥2× медианы автора).",
+    inputSchema: { type: "object", properties: {
+      status: { type: "string", description: "shot (по умолчанию) | rest | all" }, direction: { type: "string", description: "knees, back, weight, potency…" },
+      mechanism: { type: "string", description: "exercise, supplement, selfmassage, food…" }, author: { type: "string" }, q: { type: "string", description: "поиск по нику и подписи" },
+      min_views: { type: "integer" }, min_x: { type: "number" }, since: { type: "string", description: "YYYY-MM-DD" },
+      sort: { type: "string", description: "x | views | published | er" }, limit: { type: "integer", description: "до 200" }, offset: { type: "integer" } } } },
+  { name: "get_video", title: "Ролик целиком", description: "Все поля ролика: метрики, полный разбор ИИ, субтитры с переводом.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "например ig_DdZ_864kssT" } }, required: ["id"] } },
+  { name: "run_query", title: "SQL-запрос", description: "Один запрос SELECT (SQLite / D1) к базе, только чтение, до 500 строк. Поля разбора: json_extract(analysis,'$.hook_type'). Агрегируйте в SQL.",
+    inputSchema: { type: "object", properties: { sql: { type: "string" }, params: { type: "array", items: {} } }, required: ["sql"] } },
+  { name: "search", title: "Поиск роликов", description: "Поиск выстрелов по нику автора или подписи; возвращает id для fetch.",
+    inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
+  { name: "fetch", title: "Открыть ролик", description: "Полные данные ролика по id из search.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+].map((t) => ({ ...t, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }));
+
+async function mcp(req, env, url, key) {
+  if (req.method === "GET") return new Response("MCP: используйте POST", { status: 405, headers: { allow: "POST" } });
+  if (req.method === "DELETE") return new Response(null, { status: 204 });
+  if (req.method !== "POST") return new Response(null, { status: 405 });
+  const fake = new Request(url.origin + "/api/v1/stats", { headers: { authorization: "Bearer " + key } });
+  if (!(await apiKeyOk(fake, env))) return json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Неверный или отозванный ключ" } }, 401);
+  const call = async (path, params = {}, body) => {
+    const u = new URL(url.origin + path);
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, String(v));
+    const r = await v1(new Request(u, { method: body ? "POST" : "GET", headers: { authorization: "Bearer " + key, "content-type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined }), env, u);
+    return r.text();
+  };
+  const one = async (m) => {
+    const id = m.id ?? null;
+    if (m.method === "initialize")
+      return { jsonrpc: "2.0", id, result: { protocolVersion: (m.params && m.params.protocolVersion) || "2025-06-18",
+        capabilities: { tools: { listChanged: false } }, serverInfo: { name: "radar", title: "Радар коротких видео", version: "1.0.0" },
+        instructions: "База радара: рилсы врачей и блогеров о здоровье с разбором ИИ. Начните с get_schema. Для подсчётов — run_query (только SELECT), агрегируйте в SQL. Выстрелы: status='analyzed'." } };
+    if (m.method === "ping") return { jsonrpc: "2.0", id, result: {} };
+    if (m.method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: MCP_TOOLS } };
+    if (m.method === "resources/list") return { jsonrpc: "2.0", id, result: { resources: [] } };
+    if (m.method === "prompts/list") return { jsonrpc: "2.0", id, result: { prompts: [] } };
+    if (m.method === "tools/call") {
+      const n = m.params && m.params.name, a = (m.params && m.params.arguments) || {};
+      let text;
+      try {
+        if (n === "get_schema") text = await call("/api/v1/schema");
+        else if (n === "get_stats") text = await call("/api/v1/stats");
+        else if (n === "list_videos") text = await call("/api/v1/videos", a);
+        else if (n === "get_video" || n === "fetch") {
+          const raw = await call("/api/v1/video", { id: a.id });
+          if (n === "fetch") { const v = parse(raw, {}); text = JSON.stringify({ id: a.id, title: (v.author ? "@" + v.author + ": " : "") + (v.title || a.id), text: raw, url: v.url || "", metadata: { views: v.views, x: v.vs_median } }); }
+          else text = raw;
+        }
+        else if (n === "run_query") text = await call("/api/v1/query", {}, { sql: a.sql, params: a.params });
+        else if (n === "search") {
+          const raw = parse(await call("/api/v1/videos", { status: "shot", q: a.query, limit: 30 }), {});
+          text = JSON.stringify({ results: (raw.rows || []).map((r) => ({ id: r.id, title: "@" + r.author + " — " + (r.caption || "").slice(0, 80) + " (" + r.views + " просм., ×" + r.vs_median + ")", url: r.url })) });
+        }
+        else return { jsonrpc: "2.0", id, error: { code: -32602, message: "Нет такого инструмента: " + n } };
+      } catch (e) { return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Ошибка: " + String(e && e.message || e) }], isError: true } }; }
+      const err = /^\{"error"/.test(text);
+      return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], isError: err } };
+    }
+    if (m.id === undefined || m.id === null) return null;   // уведомления (notifications/*) — без ответа
+    return { jsonrpc: "2.0", id, error: { code: -32601, message: "Метод не поддерживается: " + m.method } };
+  };
+  const body = await req.json().catch(() => null);
+  if (!body) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
+  if (Array.isArray(body)) {
+    const out = (await Promise.all(body.map(one))).filter(Boolean);
+    return out.length ? json(out) : new Response(null, { status: 202 });
+  }
+  const r = await one(body);
+  return r ? json(r) : new Response(null, { status: 202 });
+}
+
 async function api(req, env, url) {
   const p = url.pathname;
   if (p.startsWith("/api/v1/")) return v1(req, env, url);
@@ -535,6 +615,11 @@ async function api(req, env, url) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    const mk = url.pathname.match(/^\/mcp\/(rdr_[a-f0-9]{48})\/?$/);
+    if (mk) {
+      try { return await mcp(req, env, url, mk[1]); }
+      catch (e) { return json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: String(e && e.message || e) } }, 500); }
+    }
     if (url.pathname.startsWith("/api/")) {
       try { return await api(req, env, url); }
       catch (e) { return json({ error: String(e && e.message || e) }, 500); }
