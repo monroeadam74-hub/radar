@@ -13,6 +13,9 @@ jobs:
           import os,json,re;raw=os.environ.get('APP_USERS','').strip().strip('\"'+chr(39)+'\x60');p=[x for x in re.split(r'[;\n]',raw) if ':' in x][0];l,_,w=p.partition(':');json.dump({'login':l.strip(),'password':w.strip()},open('cred.json','w'))"
           curl -s -c jar.txt -o /dev/null -w "login %{http_code}\n" -H "content-type: application/json" --data @cred.json "$B/api/login"; rm -f cred.json
           echo "== ключи (без самих ключей)"; curl -s -b jar.txt "$B/api/apikeys"; echo
+          echo "== журнал MCP (последние 100)"; curl -s -b jar.txt "$B/api/mcplog" | python3 -c "
+          import json,sys
+          for r in json.load(sys.stdin).get('log',[]): print(r['ts'][:19], r['key_id'], r['http'], r['rpc'], r['tool'], r['status'], str(r['ms'])+'ms', '|', r['ua'][:60], '|', r['accept'], '|', r['proto'], r['sess'], '|', (r['err'] or '')[:120])"
           echo "== well-known"; curl -s -o /dev/null -w "oauth-protected-resource %{http_code} %{content_type}\n" "$B/.well-known/oauth-protected-resource"
           curl -s -o /dev/null -w "oauth-authorization-server %{http_code} %{content_type}\n" "$B/.well-known/oauth-authorization-server"
           echo "== mcp GET с неверным ключом"; curl -s -m 20 -o /dev/null -w "%{http_code} %{content_type} %{time_total}\n" "$B/mcp/rdr_000000000000000000000000000000000000000000000000"

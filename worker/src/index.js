@@ -10,6 +10,7 @@ const SCHEMA = [
   "CREATE TABLE IF NOT EXISTS funnels (url TEXT PRIMARY KEY, profile_id TEXT, final_url TEXT, status TEXT, data TEXT, ts TEXT)",
   "CREATE TABLE IF NOT EXISTS users (login TEXT PRIMARY KEY, salt TEXT, hash TEXT, role TEXT, note TEXT, created TEXT, last_login TEXT)",
   "CREATE TABLE IF NOT EXISTS apikeys (id TEXT PRIMARY KEY, name TEXT, hash TEXT, created TEXT, last_used TEXT, uses INTEGER DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS mcplog (ts TEXT, key_id TEXT, http TEXT, rpc TEXT, tool TEXT, status INTEGER, ms INTEGER, ua TEXT, accept TEXT, proto TEXT, sess TEXT, err TEXT)",
 ];
 
 const json = (data, status = 200, headers = {}) =>
@@ -80,7 +81,7 @@ const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d
 
 
 // ===== Публичный API только на чтение (для ChatGPT и других ИИ): ключ в заголовке Authorization: Bearer <ключ> =====
-const HIDDEN_TABLES = /\b(users|apikeys|thumbs|sqlite_sequence|_cf_kv|d1_migrations)\b/i;
+const HIDDEN_TABLES = /\b(users|apikeys|mcplog|thumbs|sqlite_sequence|_cf_kv|d1_migrations)\b/i;
 const WRITE_WORDS = /\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex|analyze|begin|commit|rollback|savepoint|release|load_extension)\b/i;
 const MAX_CHARS = 90000;
 
@@ -236,7 +237,20 @@ const MCP_CORS = { "access-control-allow-origin": "*", "access-control-allow-met
   "access-control-allow-headers": "content-type, accept, authorization, mcp-session-id, mcp-protocol-version, last-event-id",
   "access-control-expose-headers": "mcp-session-id" };
 async function mcp(req, env, url, key) {
-  const r = await mcpInner(req, env, url, key);
+  const t0 = Date.now();
+  let rpc = "", tool = "", err = "";
+  try { if (req.method === "POST") { const b = await req.clone().json(); const one = Array.isArray(b) ? b[0] : b;
+    rpc = (Array.isArray(b) ? "batch:" : "") + String(one && one.method || ""); tool = String(one && one.params && one.params.name || ""); } } catch (e) { err = "bad json"; }
+  let r;
+  try { r = await mcpInner(req, env, url, key); } catch (e) { err = String(e && e.message || e).slice(0, 200); r = json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: err } }, 500); }
+  try {
+    await ensure(env);
+    if (r.status >= 400 && !err) err = (await r.clone().text()).slice(0, 200);
+    await env.DB.prepare("INSERT INTO mcplog VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(new Date().toISOString(), key.slice(4, 12), req.method, rpc, tool, r.status,
+      Date.now() - t0, (req.headers.get("user-agent") || "").slice(0, 120), (req.headers.get("accept") || "").slice(0, 80),
+      req.headers.get("mcp-protocol-version") || "", req.headers.get("mcp-session-id") ? "yes" : "", err).run();
+    await env.DB.prepare("DELETE FROM mcplog WHERE ts < ?").bind(new Date(Date.now() - 7 * 864e5).toISOString()).run();
+  } catch {}
   const h = new Headers(r.headers);
   for (const [k, v] of Object.entries(MCP_CORS)) h.set(k, v);
   return new Response(r.body, { status: r.status, headers: h });
@@ -353,6 +367,13 @@ async function api(req, env, url) {
       await env.DB.prepare("DELETE FROM apikeys WHERE id=?").bind(url.searchParams.get("id") || "").run();
       return json({ ok: true });
     }
+  }
+
+  if (p === "/api/mcplog") {
+    if (!me.admin) return json({ error: "Только для администратора" }, 403);
+    await ensure(env);
+    const r = await env.DB.prepare("SELECT * FROM mcplog ORDER BY ts DESC LIMIT 100").all();
+    return json({ log: r.results || [] });
   }
 
   // «Доступ»: управление пользователями (только админы)
