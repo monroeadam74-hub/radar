@@ -284,8 +284,28 @@ async function loadAccess(){
         .map(([id,l,h,inp])=>`<div style="display:flex;flex-direction:column;gap:4px"><label for="${id}" style="font-weight:600">${l}</label>${inp}<small class="muted">${h}</small></div>`).join("")}
     </div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" onclick="$('acc_p').value=genPw()">Сгенерировать пароль</button><button class="btn pri" onclick="accSave()">Сохранить</button><button class="btn" onclick="loadAccess()">Очистить</button></div>
-    <p class="muted" style="margin:10px 0 0">Сгенерированный пароль скопируйте и передайте человеку сразу — после сохранения его не будет видно.</p></div>`;
+    <p class="muted" style="margin:10px 0 0">Сгенерированный пароль скопируйте и передайте человеку сразу — после сохранения его не будет видно.</p></div>
+  <div class="panel" id="keybox"><h3>Ключи API для ИИ (только чтение)</h3><p class="muted">загружаю…</p></div>`;
+  loadKeys();
 }
+async function loadKeys(){
+  let r; try{r=await api("/api/apikeys");}catch(x){$("keybox").innerHTML=`<h3>Ключи API для ИИ</h3><p class="muted">Нет доступа</p>`;return;}
+  const fd=d=>d?new Date(d).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
+  const rows=(r.keys||[]).map(k=>`<tr><td><b>${e(k.name)}</b></td><td>…${e(k.id)}</td><td>${fd(k.created)}</td><td>${fd(k.last_used)}</td><td>${k.uses||0}</td>
+    <td><button class="btn" onclick="keyDel('${e(k.id)}','${e(k.name)}')">Отозвать</button></td></tr>`).join("");
+  $("keybox").innerHTML=`<h3>Ключи API для ИИ (только чтение)</h3>
+    <p class="muted" style="margin:0 0 10px">Для ChatGPT и других ИИ: читают и анализируют всю базу (ролики, разборы, субтитры, профили), но не могут ничего менять, запускать или удалять. Схема для подключения: <code>${location.origin}/api/v1/openapi.json</code>. Ключ показывается один раз — в базе хранится только его хеш.</p>
+    <table class="tbl" style="width:100%"><thead><tr><th>Название</th><th>Ключ</th><th>Создан</th><th>Последнее обращение</th><th>Запросов</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="6" class="muted">Ключей нет</td></tr>`}</tbody></table>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center"><input id="key_n" placeholder="Название, например ChatGPT" style="min-width:220px"><button class="btn pri" onclick="keyNew()">Создать ключ</button></div>
+    <div id="key_out"></div>`;
+}
+async function keyNew(){const r=await fetch("/api/apikeys",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:$("key_n").value||"ИИ"})}).then(x=>x.json()).catch(()=>({ok:false}));
+  if(!r.ok){toast(r.error||"Ошибка");return;}
+  await loadKeys();
+  $("key_out").innerHTML=`<div class="panel" style="margin-top:10px;border:2px solid var(--acc,#2a7)"><b>Новый ключ — скопируйте сейчас, больше он не покажется:</b>
+    <div style="display:flex;gap:8px;margin-top:8px"><input id="key_val" readonly value="${e(r.key)}" style="flex:1;font-family:monospace"><button class="btn" onclick="navigator.clipboard.writeText($('key_val').value);toast('Скопировано')">Копировать</button></div></div>`;}
+async function keyDel(id,n){if(!confirm("Отозвать ключ «"+n+"»? ИИ с этим ключом сразу потеряет доступ."))return;
+  const r=await fetch("/api/apikeys?id="+encodeURIComponent(id),{method:"DELETE"}).then(x=>x.json());if(r.ok){toast("Отозван");loadKeys();}else toast(r.error||"Ошибка");}
 function genPw(){const a="abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";const b=crypto.getRandomValues(new Uint32Array(14));return [...b].map(x=>a[x%a.length]).join("");}
 function accEdit(l,r,n){$("acc_l").value=l;$("acc_l").readOnly=true;$("acc_r").value=r;$("acc_n").value=n;$("acc_p").value="";$("accTitle").textContent="Изменить: "+l;$("acc_p").focus();}
 async function accSave(){const b={login:$("acc_l").value,password:$("acc_p").value,role:$("acc_r").value,note:$("acc_n").value};

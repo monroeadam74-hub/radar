@@ -9,6 +9,7 @@ const SCHEMA = [
      status TEXT, added TEXT, last_run TEXT, active INTEGER DEFAULT 1)`,
   "CREATE TABLE IF NOT EXISTS funnels (url TEXT PRIMARY KEY, profile_id TEXT, final_url TEXT, status TEXT, data TEXT, ts TEXT)",
   "CREATE TABLE IF NOT EXISTS users (login TEXT PRIMARY KEY, salt TEXT, hash TEXT, role TEXT, note TEXT, created TEXT, last_login TEXT)",
+  "CREATE TABLE IF NOT EXISTS apikeys (id TEXT PRIMARY KEY, name TEXT, hash TEXT, created TEXT, last_used TEXT, uses INTEGER DEFAULT 0)",
 ];
 
 const json = (data, status = 200, headers = {}) =>
@@ -77,8 +78,141 @@ async function ensure(env) {
 
 const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 
+
+// ===== Публичный API только на чтение (для ChatGPT и других ИИ): ключ в заголовке Authorization: Bearer <ключ> =====
+const HIDDEN_TABLES = /\b(users|apikeys|thumbs|sqlite_sequence|_cf_kv|d1_migrations)\b/i;
+const WRITE_WORDS = /\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex|analyze|begin|commit|rollback|savepoint|release|load_extension)\b/i;
+const MAX_CHARS = 90000;
+
+function fit(rows, extra = {}) {   // ответ ChatGPT должен быть компактным: режем длинные строки и хвост списка
+  const cut = (v) => (typeof v === "string" && v.length > 3000 ? v.slice(0, 3000) + "…[обрезано]" : v);
+  let out = rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, cut(v)])));
+  let body = JSON.stringify({ rows: out, count: out.length, ...extra });
+  let truncated = false;
+  while (body.length > MAX_CHARS && out.length > 1) {
+    out = out.slice(0, Math.floor(out.length * 0.7)); truncated = true;
+    body = JSON.stringify({ rows: out, count: out.length, truncated, ...extra });
+  }
+  return json(truncated ? { rows: out, count: out.length, truncated: true, hint: "Ответ обрезан по размеру: уменьшите limit или выберите меньше колонок", ...extra } : { rows: out, count: out.length, ...extra });
+}
+
+async function apiKeyOk(req, env) {
+  const m = (req.headers.get("authorization") || "").match(/^Bearer\s+([A-Za-z0-9_-]{20,})$/);
+  if (!m) return false;
+  await ensure(env);
+  const h = await sha(m[1]);
+  const k = await env.DB.prepare("SELECT id FROM apikeys WHERE hash=?").bind(h).first();
+  if (!k) return false;
+  await env.DB.prepare("UPDATE apikeys SET last_used=?, uses=COALESCE(uses,0)+1 WHERE id=?").bind(new Date().toISOString(), k.id).run();
+  return true;
+}
+
+function openapi(origin) {
+  const q = (name, d, type = "string", extra = {}) => ({ name, in: "query", required: false, description: d, schema: { type, ...extra } });
+  return {
+    openapi: "3.1.0",
+    info: { title: "Радар коротких видео (только чтение)", version: "1.0.0",
+      description: "Живая база радара: рилсы Instagram врачей и блогеров о здоровье, их метрики и разбор ИИ. " +
+        "«Выстрел» = ролик с ≥100 тыс. просмотров и кратностью vs_median ≥2 к медиане автора (status='analyzed'); остальные ролики — status='profile_rest'. " +
+        "Сначала вызовите getSchema, чтобы увидеть таблицы и колонки; для любых срезов используйте runQuery (SQLite, только SELECT)." },
+    servers: [{ url: origin }],
+    paths: {
+      "/api/v1/schema": { get: { operationId: "getSchema", summary: "Таблицы, колонки и пояснения к полям", responses: { "200": { description: "ok" } } } },
+      "/api/v1/stats": { get: { operationId: "getStats", summary: "Сводка: ролики по статусам, направления × механизмы, аккаунты", responses: { "200": { description: "ok" } } } },
+      "/api/v1/videos": { get: { operationId: "listVideos", summary: "Ролики с фильтрами (компактно, без полного разбора)",
+        parameters: [q("status", "shot (выстрелы, по умолчанию) | rest (не выстрелы) | all"), q("direction", "направление, например knees, back, weight"),
+          q("mechanism", "механизм решения, например exercise, supplement, selfmassage"), q("author", "ник автора без @"),
+          q("q", "поиск по нику и подписи"), q("min_views", "минимум просмотров", "integer"), q("min_x", "минимальная кратность к медиане автора", "number"),
+          q("since", "дата публикации от, YYYY-MM-DD"), q("sort", "views | x | published | er (по умолчанию x)"),
+          q("limit", "до 200, по умолчанию 50", "integer"), q("offset", "сдвиг для следующей страницы", "integer")],
+        responses: { "200": { description: "ok" } } } },
+      "/api/v1/video": { get: { operationId: "getVideo", summary: "Один ролик целиком: метрики, полный разбор ИИ, субтитры с переводом",
+        parameters: [{ name: "id", in: "query", required: true, description: "id ролика, например ig_DdZ_864kssT", schema: { type: "string" } }],
+        responses: { "200": { description: "ok" } } } },
+      "/api/v1/query": { post: { operationId: "runQuery", summary: "Произвольный SQL-запрос SELECT к базе (SQLite / Cloudflare D1). Только чтение, до 500 строк",
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["sql"],
+          properties: { sql: { type: "string", description: "Один запрос SELECT или WITH … SELECT. Для полей JSON используйте json_extract(analysis,'$.hook_type')" },
+            params: { type: "array", items: {}, description: "значения для ? в запросе" } } } } } },
+        responses: { "200": { description: "ok" } } } },
+    },
+    components: { schemas: {}, securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
+    security: [{ bearer: [] }],
+  };
+}
+
+const FIELD_NOTES = {
+  videos: {
+    id: "ig_<shortcode>", url: "ссылка на ролик", author: "ник автора", author_id: "ig:<ник>, связь с profiles.id",
+    views: "просмотры", likes: "лайки", comments: "комментарии", shares: "репосты (не всегда есть)",
+    vs_median: "кратность к скользящей медиане просмотров автора (×)", status: "analyzed = выстрел с разбором; queued = выстрел в очереди; profile_rest = не выстрел",
+    direction: "направление здоровья (knees, back, weight, potency, sleep, …)", mechanism: "основной механизм решения (exercise, supplement, food, drink, topical, selfmassage, habit, drug, clinic, device, visit, folk, info, nothealth, none, other)",
+    mechanisms: "все механизмы через запятую", analysis: "JSON полного разбора ИИ: hook_type, format, content_type, host, visuals, cta, cta_mechanic, emotion, why_it_works, how_to_adapt, nutra_score, moderation_risk, target_audience, language, ai_generated, on_screen_text…",
+    subtitles: "JSON: [{start,end,orig,ru}] — речь с переводом", published: "дата публикации (UTC)", duration: "длительность, сек", source: "profile = собран с аккаунта",
+  },
+  profiles: { id: "ig:<ник>", followers: "подписчики", reels: "собрано рилсов", median_views: "медиана просмотров", shots: "выстрелов", wave: "дата волны сбора", ai: "1 = ИИ-аккаунт" },
+};
+
+async function v1(req, env, url) {
+  const p = url.pathname;
+  if (p === "/api/v1/openapi.json") return json(openapi(url.origin));
+  if (!(await apiKeyOk(req, env))) return json({ error: "Нужен ключ: заголовок Authorization: Bearer <ключ>" }, 401);
+
+  if (p === "/api/v1/schema") {
+    const t = await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') ORDER BY name").all();
+    const tables = (t.results || []).filter((x) => !HIDDEN_TABLES.test(x.name)).map((x) => ({ name: x.name, sql: x.sql, notes: FIELD_NOTES[x.name] }));
+    return json({ tables, tips: ["Выстрелы: WHERE status='analyzed'", "Поля разбора: json_extract(analysis,'$.hook_type')", "Ответ ограничен 500 строками и ~90 тыс. символов — агрегируйте в SQL"] });
+  }
+  if (p === "/api/v1/stats") {
+    const st = await env.DB.prepare("SELECT status, COUNT(*) AS n FROM videos GROUP BY status").all();
+    const dm = await env.DB.prepare(`SELECT direction, mechanism, COUNT(*) AS n, CAST(AVG(vs_median) AS REAL) AS avg_x
+        FROM videos WHERE status='analyzed' GROUP BY direction, mechanism ORDER BY n DESC LIMIT 300`).all();
+    const pr = await env.DB.prepare("SELECT COUNT(*) AS profiles, SUM(COALESCE(ai,0)) AS ai_profiles FROM profiles").first();
+    return json({ by_status: st.results, direction_x_mechanism: dm.results, profiles: pr });
+  }
+  if (p === "/api/v1/videos") {
+    const g = (k) => (url.searchParams.get(k) || "").trim();
+    const where = [], b = [];
+    const status = g("status") || "shot";
+    if (status === "shot") where.push("status='analyzed'"); else if (status === "rest") where.push("status='profile_rest'");
+    if (g("direction")) { where.push("direction=?"); b.push(g("direction")); }
+    if (g("mechanism")) { where.push("(mechanism=? OR ','||mechanisms||',' LIKE ?)"); b.push(g("mechanism"), "%," + g("mechanism") + ",%"); }
+    if (g("author")) { where.push("lower(author)=?"); b.push(g("author").replace(/^@/, "").toLowerCase()); }
+    if (g("q")) { where.push("(lower(author) LIKE ? OR lower(title) LIKE ?)"); b.push("%" + g("q").toLowerCase() + "%", "%" + g("q").toLowerCase() + "%"); }
+    if (g("min_views")) { where.push("views>=?"); b.push(+g("min_views")); }
+    if (g("min_x")) { where.push("vs_median>=?"); b.push(+g("min_x")); }
+    if (g("since")) { where.push("published>=?"); b.push(g("since")); }
+    const order = { views: "views DESC", published: "published DESC", er: "(COALESCE(likes,0)+COALESCE(comments,0))*1.0/NULLIF(views,0) DESC" }[g("sort")] || "vs_median DESC";
+    const limit = Math.min(200, Math.max(1, +g("limit") || 50)), offset = Math.max(0, +g("offset") || 0);
+    const sql = `SELECT id, url, author, views, likes, comments, shares, vs_median, duration, published, direction, mechanism, status,
+        json_extract(analysis,'$.hook_type') AS hook_type, json_extract(analysis,'$.format') AS format, json_extract(analysis,'$.host') AS host,
+        json_extract(analysis,'$.cta_mechanic') AS cta, json_extract(analysis,'$.language') AS language, substr(title,1,200) AS caption
+        FROM videos ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`;
+    const r = await env.DB.prepare(sql).bind(...b).all();
+    return fit(r.results || [], { next_offset: offset + (r.results || []).length });
+  }
+  if (p === "/api/v1/video") {
+    const r = await env.DB.prepare("SELECT * FROM videos WHERE id=?").bind(url.searchParams.get("id") || "").first();
+    if (!r) return json({ error: "не найден" }, 404);
+    r.analysis = parse(r.analysis, r.analysis); r.subtitles = parse(r.subtitles, r.subtitles);
+    return json(r);
+  }
+  if (p === "/api/v1/query" && req.method === "POST") {
+    const body = await req.json().catch(() => ({}));
+    let sql = String(body.sql || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ").trim().replace(/;\s*$/, "");
+    if (!/^(select|with)\b/i.test(sql)) return json({ error: "Разрешён только SELECT (или WITH … SELECT)" }, 400);
+    if (sql.includes(";")) return json({ error: "Только один запрос за раз" }, 400);
+    if (WRITE_WORDS.test(sql)) return json({ error: "Запрос похож на изменение данных — запрещено, доступ только на чтение" }, 400);
+    if (HIDDEN_TABLES.test(sql)) return json({ error: "Эта таблица закрыта" }, 400);
+    const wrapped = `SELECT * FROM (${sql}) LIMIT 500`;
+    const r = await env.DB.prepare(wrapped).bind(...(Array.isArray(body.params) ? body.params : [])).all();
+    return fit(r.results || []);
+  }
+  return json({ error: "not found" }, 404);
+}
+
 async function api(req, env, url) {
   const p = url.pathname;
+  if (p.startsWith("/api/v1/")) return v1(req, env, url);
 
   if (p === "/api/login" && req.method === "POST") {
     const b = await req.json().catch(() => ({}));
@@ -106,6 +240,28 @@ async function api(req, env, url) {
   const me = await who(req, env);
   if (!me) return json({ error: "auth" }, 401);
   if (p === "/api/me") return json({ login: me.login, admin: me.admin, open: !!me.open });
+
+  // «Доступ»: ключи API для ИИ (только админы). Ключ показывается один раз; в базе — только хеш
+  if (p === "/api/apikeys") {
+    if (!me.admin) return json({ error: "Только для администратора" }, 403);
+    await ensure(env);
+    if (req.method === "GET") {
+      const r = await env.DB.prepare("SELECT id, name, created, last_used, uses FROM apikeys ORDER BY created").all();
+      return json({ keys: r.results || [] });
+    }
+    if (req.method === "POST") {
+      const b = await req.json().catch(() => ({}));
+      const name = String(b.name || "ИИ").slice(0, 60);
+      const raw = [...crypto.getRandomValues(new Uint8Array(24))].map((x) => x.toString(16).padStart(2, "0")).join("");
+      const key = "rdr_" + raw, id = raw.slice(0, 8);
+      await env.DB.prepare("INSERT INTO apikeys (id, name, hash, created, uses) VALUES (?,?,?,?,0)").bind(id, name, await sha(key), new Date().toISOString()).run();
+      return json({ ok: true, id, key });
+    }
+    if (req.method === "DELETE") {
+      await env.DB.prepare("DELETE FROM apikeys WHERE id=?").bind(url.searchParams.get("id") || "").run();
+      return json({ ok: true });
+    }
+  }
 
   // «Доступ»: управление пользователями (только админы)
   if (p === "/api/users") {
